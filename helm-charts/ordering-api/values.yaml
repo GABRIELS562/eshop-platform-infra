@@ -5,7 +5,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/gabriels562/ordering-api
-  tag: "0db7625"
+  tag: "9dd3d01"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:

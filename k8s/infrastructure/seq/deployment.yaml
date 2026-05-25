@@ -23,9 +23,6 @@ spec:
         version: "2024.1"
     spec:
       serviceAccountName: seq
-      securityContext:
-        runAsNonRoot: false
-        fsGroup: 0
       containers:
         - name: seq
           image: datalust/seq:2024.1
@@ -40,19 +37,13 @@ spec:
           env:
             - name: ACCEPT_EULA
               value: "Y"
-            - name: SEQ_FIRSTRUN_ADMINPASSWORDHASH
-              valueFrom:
-                secretKeyRef:
-                  name: seq-secret
-                  key: admin-password-hash
-                  optional: true
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "256Mi"
-              cpu: "200m"
+              memory: "512Mi"
+              cpu: "500m"
           volumeMounts:
             - name: seq-data
               mountPath: /data
@@ -60,25 +51,18 @@ spec:
             httpGet:
               path: /
               port: 80
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 3
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /
               port: 80
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-              add:
-                - NET_BIND_SERVICE
       volumes:
         - name: seq-data
           persistentVolumeClaim:
@@ -93,19 +77,3 @@ metadata:
     env: production
     team: platform
     version: "2024.1"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: seq-secret
-  labels:
-    app: seq
-    env: production
-    team: platform
-    version: "2024.1"
-type: Opaque
-stringData:
-  # [placeholder] - Replace with secure credentials before deployment
-  # Generate password hash using:
-  #   echo 'your-password' | docker run --rm -i datalust/seq config hash
-  admin-password-hash: "[placeholder]-replace-with-password-hash"

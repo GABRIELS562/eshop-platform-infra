@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  labels:
+    app: rabbitmq
+    env: production
+    team: platform
+    version: "3.12"
+data:
+  10-defaults.conf: |
+    ## Default RabbitMQ configuration for eShop Platform
+
+    ## Networking
+    listeners.tcp.default = 5672
+    management.tcp.port = 15672
+
+    ## Memory and disk alarms
+    vm_memory_high_watermark.relative = 0.7
+    vm_memory_high_watermark_paging_ratio = 0.75
+    disk_free_limit.relative = 1.5
+
+    ## Queue settings
+    queue_master_locator = min-masters
+
+    ## Logging
+    log.console = true
+    log.console.level = info
+    log.file = false
+
+    ## Management plugin settings
+    management.load_definitions = /etc/rabbitmq/definitions.json
+
+    ## Consumer timeout (30 minutes)
+    consumer_timeout = 1800000
+
+    ## Connection and channel limits
+    channel_max = 2047
+
+    ## Heartbeat timeout
+    heartbeat = 60
+
+    ## Message acknowledgment timeout (30 minutes)
+    # This prevents stuck consumers
+    consumer_timeout = 1800000
+
+  definitions.json: |
+    {
+      "vhosts": [
+        {"name": "/"},
+        {"name": "eshop"}
+      ],
+      "permissions": [
+        {
+          "user": "eshop",
+          "vhost": "eshop",
+          "configure": ".*",
+          "write": ".*",
+          "read": ".*"
+        }
+      ],
+      "exchanges": [
+        {
+          "name": "eshop.events",
+          "vhost": "eshop",
+          "type": "topic",
+          "durable": true,
+          "auto_delete": false
+        },
+        {
+          "name": "eshop.commands",
+          "vhost": "eshop",
+          "type": "direct",
+          "durable": true,
+          "auto_delete": false
+        }
+      ],
+      "queues": [
+        {
+          "name": "catalog.events",
+          "vhost": "eshop",
+          "durable": true,
+          "auto_delete": false,
+          "arguments": {
+            "x-queue-type": "quorum"
+          }
+        },
+        {
+          "name": "ordering.events",
+          "vhost": "eshop",
+          "durable": true,
+          "auto_delete": false,
+          "arguments": {
+            "x-queue-type": "quorum"
+          }
+        },
+        {
+          "name": "basket.events",
+          "vhost": "eshop",
+          "durable": true,
+          "auto_delete": false,
+          "arguments": {
+            "x-queue-type": "quorum"
+          }
+        },
+        {
+          "name": "identity.events",
+          "vhost": "eshop",
+          "durable": true,
+          "auto_delete": false,
+          "arguments": {
+            "x-queue-type": "quorum"
+          }
+        }
+      ],
+      "bindings": [
+        {
+          "source": "eshop.events",
+          "vhost": "eshop",
+          "destination": "catalog.events",
+          "destination_type": "queue",
+          "routing_key": "catalog.#"
+        },
+        {
+          "source": "eshop.events",
+          "vhost": "eshop",
+          "destination": "ordering.events",
+          "destination_type": "queue",
+          "routing_key": "ordering.#"
+        },
+        {
+          "source": "eshop.events",
+          "vhost": "eshop",
+          "destination": "basket.events",
+          "destination_type": "queue",
+          "routing_key": "basket.#"
+        },
+        {
+          "source": "eshop.events",
+          "vhost": "eshop",
+          "destination": "identity.events",
+          "destination_type": "queue",
+          "routing_key": "identity.#"
+        }
+      ]
+    }

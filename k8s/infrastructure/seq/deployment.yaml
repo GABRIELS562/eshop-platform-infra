@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seq
+  labels:
+    app: seq
+    env: production
+    team: platform
+    version: "2024.1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seq
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: seq
+        env: production
+        team: platform
+        version: "2024.1"
+    spec:
+      serviceAccountName: seq
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 0
+      containers:
+        - name: seq
+          image: datalust/seq:2024.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: ingestion
+              containerPort: 5341
+              protocol: TCP
+          env:
+            - name: ACCEPT_EULA
+              value: "Y"
+            - name: SEQ_FIRSTRUN_ADMINPASSWORDHASH
+              valueFrom:
+                secretKeyRef:
+                  name: seq-secret
+                  key: admin-password-hash
+                  optional: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          volumeMounts:
+            - name: seq-data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+      volumes:
+        - name: seq-data
+          persistentVolumeClaim:
+            claimName: seq-data
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: seq
+  labels:
+    app: seq
+    env: production
+    team: platform
+    version: "2024.1"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: seq-secret
+  labels:
+    app: seq
+    env: production
+    team: platform
+    version: "2024.1"
+type: Opaque
+stringData:
+  # [placeholder] - Replace with secure credentials before deployment
+  # Generate password hash using:
+  #   echo 'your-password' | docker run --rm -i datalust/seq config hash
+  admin-password-hash: "[placeholder]-replace-with-password-hash"

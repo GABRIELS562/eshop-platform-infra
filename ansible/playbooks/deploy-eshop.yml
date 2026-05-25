@@ -1,0 +1,88 @@
+---
+# eShop Platform Deployment Playbook
+# Deploys the complete eShop platform to Server1 K3s cluster
+#
+# Usage:
+#   Full deployment:
+#     ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml
+#
+#   Partial deployments:
+#     ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags namespace
+#     ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags rbac
+#     ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags infrastructure
+#     ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags apps
+
+- name: Deploy eShop Platform
+  hosts: k3s_cluster
+  gather_facts: yes
+  become: yes
+
+  vars:
+    eshop_namespace: eshop
+    k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+  pre_tasks:
+    - name: Verify K3s is running
+      command: kubectl get nodes
+      register: k3s_nodes
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig }}"
+
+    - name: Display cluster info
+      debug:
+        msg: |
+          Cluster Nodes:
+          {{ k3s_nodes.stdout }}
+
+    - name: Check if ArgoCD is installed
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: argocd
+        kubeconfig: "{{ k3s_kubeconfig }}"
+      register: argocd_ns
+
+    - name: Fail if ArgoCD is not installed
+      fail:
+        msg: "ArgoCD namespace not found. Please install ArgoCD first."
+      when: argocd_ns.resources | length == 0
+
+    - name: Check External Secrets Operator
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: external-secrets
+        kubeconfig: "{{ k3s_kubeconfig }}"
+      register: eso_ns
+
+    - name: Warn if External Secrets Operator not installed
+      debug:
+        msg: "WARNING: External Secrets Operator not found. Vault integration will not work."
+      when: eso_ns.resources | length == 0
+
+  roles:
+    - role: eshop-infrastructure
+
+  post_tasks:
+    - name: Get deployment summary
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        namespace: "{{ eshop_namespace }}"
+        kubeconfig: "{{ k3s_kubeconfig }}"
+      register: deployments
+
+    - name: Display deployment summary
+      debug:
+        msg: |
+          === eShop Platform Deployment Summary ===
+
+          Namespace: {{ eshop_namespace }}
+          Total Deployments: {{ deployments.resources | length }}
+
+          {% for deploy in deployments.resources %}
+          - {{ deploy.metadata.name }}: {{ deploy.status.readyReplicas | default(0) }}/{{ deploy.status.replicas | default(0) }} ready
+          {% endfor %}
+
+          Next Steps:
+          1. Verify all pods are running: kubectl get pods -n eshop
+          2. Check ArgoCD applications: kubectl get applications -n argocd
+          3. Configure Vault secrets: ./k8s/external-secrets/vault-setup.sh

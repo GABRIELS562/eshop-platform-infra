@@ -1,0 +1,21 @@
+apiVersion: v2
+name: mobile-bff
+description: eShop Mobile BFF - Backend for Frontend aggregator for mobile applications
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - eshop
+  - bff
+  - mobile
+  - aggregator
+  - microservice
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/dotnet-architecture/eShopOnContainers
+dependencies: []
+annotations:
+  category: Backend Service

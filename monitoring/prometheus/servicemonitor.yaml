@@ -1,0 +1,116 @@
+---
+# ServiceMonitor for scraping eShop services metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-services
+  namespace: monitoring
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      env: production
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+---
+# ServiceMonitor for RabbitMQ
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-rabbitmq
+  namespace: monitoring
+  labels:
+    app: rabbitmq
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+# ServiceMonitor for Redis
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-redis
+  namespace: monitoring
+  labels:
+    app: redis
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+# ServiceMonitor for PostgreSQL
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-postgresql
+  namespace: monitoring
+  labels:
+    app: postgresql
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      app: postgresql
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+# PodMonitor for pods without services
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: eshop-pods
+  namespace: monitoring
+  labels:
+    app: eshop
+    env: production
+    team: platform
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      env: production
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

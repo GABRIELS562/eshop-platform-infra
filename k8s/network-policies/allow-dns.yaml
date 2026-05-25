@@ -1,0 +1,27 @@
+---
+# Allow DNS resolution for all pods in eshop namespace
+# Required for service discovery within the cluster
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

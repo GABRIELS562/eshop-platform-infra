@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-config
+  labels:
+    app: postgresql
+    env: production
+    team: platform
+    version: "16"
+data:
+  postgresql.conf: |
+    # PostgreSQL configuration for eShop Platform
+
+    # Connection Settings
+    listen_addresses = '*'
+    port = 5432
+    max_connections = 100
+    superuser_reserved_connections = 3
+
+    # Memory Settings
+    shared_buffers = 128MB
+    effective_cache_size = 384MB
+    maintenance_work_mem = 64MB
+    work_mem = 4MB
+
+    # Checkpoint Settings
+    checkpoint_completion_target = 0.9
+    wal_buffers = 4MB
+    min_wal_size = 80MB
+    max_wal_size = 1GB
+
+    # Query Tuning
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    default_statistics_target = 100
+
+    # Logging
+    logging_collector = on
+    log_destination = 'stderr'
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_rotation_age = 1d
+    log_rotation_size = 100MB
+    log_min_duration_statement = 1000
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+    log_temp_files = 0
+    log_timezone = 'UTC'
+
+    # Locale and Formatting
+    datestyle = 'iso, mdy'
+    timezone = 'UTC'
+    lc_messages = 'en_US.utf8'
+    lc_monetary = 'en_US.utf8'
+    lc_numeric = 'en_US.utf8'
+    lc_time = 'en_US.utf8'
+    default_text_search_config = 'pg_catalog.english'
+
+    # Security
+    password_encryption = scram-sha-256
+
+    # Autovacuum
+    autovacuum = on
+    autovacuum_max_workers = 3
+    autovacuum_naptime = 1min
+    autovacuum_vacuum_threshold = 50
+    autovacuum_analyze_threshold = 50
+    autovacuum_vacuum_scale_factor = 0.1
+    autovacuum_analyze_scale_factor = 0.05
+
+    # Background Writer
+    bgwriter_delay = 200ms
+    bgwriter_lru_maxpages = 100
+    bgwriter_lru_multiplier = 2.0
+
+  pg_hba.conf: |
+    # PostgreSQL Client Authentication Configuration
+
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+    # Local connections
+    local   all             all                                     trust
+
+    # IPv4 local connections
+    host    all             all             127.0.0.1/32            scram-sha-256
+
+    # IPv4 connections from Kubernetes pods
+    host    all             all             10.0.0.0/8              scram-sha-256
+    host    all             all             172.16.0.0/12           scram-sha-256
+    host    all             all             192.168.0.0/16          scram-sha-256
+
+    # IPv6 local connections
+    host    all             all             ::1/128                 scram-sha-256
+
+    # Allow all connections with password (for development/testing)
+    # Comment out in production if more restrictive access is needed
+    host    all             all             0.0.0.0/0               scram-sha-256

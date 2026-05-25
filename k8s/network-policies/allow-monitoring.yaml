@@ -1,0 +1,30 @@
+---
+# Allow ingress from monitoring namespace for Prometheus scraping
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15672  # RabbitMQ metrics

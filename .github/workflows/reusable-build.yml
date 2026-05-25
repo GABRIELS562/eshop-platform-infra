@@ -1,0 +1,196 @@
+name: Reusable Build and Push
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+        description: 'Name of the service being built'
+      image_name:
+        required: true
+        type: string
+        description: 'Full image name for GHCR (e.g., ghcr.io/org/service-name)'
+      helm_values_path:
+        required: true
+        type: string
+        description: 'Path to the Helm values file to update'
+      environment:
+        required: false
+        type: string
+        default: 'develop'
+        description: 'Deployment environment (develop, staging, production)'
+      dockerfile_path:
+        required: false
+        type: string
+        default: 'Dockerfile'
+        description: 'Path to the Dockerfile'
+      build_context:
+        required: false
+        type: string
+        default: '.'
+        description: 'Docker build context path'
+      build_args:
+        required: false
+        type: string
+        default: ''
+        description: 'Docker build arguments (newline-separated)'
+    secrets:
+      REGISTRY_TOKEN:
+        required: false
+        description: 'Token for registry authentication (defaults to GITHUB_TOKEN)'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build and Push ${{ inputs.service_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+      image_digest: ${{ steps.build-push.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.12.0
+            network=host
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || github.token }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image_name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short
+            type=raw,value=${{ inputs.environment }}
+            type=raw,value=${{ github.sha }}
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.build_args }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          sbom: true
+
+      - name: Generate short SHA
+        id: short-sha
+        run: echo "sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Update image tag in Helm values
+        id: update-helm
+        run: |
+          # Check if the helm values file exists
+          if [ ! -f "${{ inputs.helm_values_path }}" ]; then
+            echo "::warning::Helm values file not found: ${{ inputs.helm_values_path }}"
+            echo "updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Update the image tag in the values file
+          SHORT_SHA="${{ steps.short-sha.outputs.sha }}"
+
+          # Use yq to update the image tag
+          if command -v yq &> /dev/null; then
+            yq e ".image.tag = \"${SHORT_SHA}\"" -i "${{ inputs.helm_values_path }}"
+          else
+            # Fallback to sed if yq is not available
+            sed -i "s/^\(\s*tag:\s*\).*/\1\"${SHORT_SHA}\"/" "${{ inputs.helm_values_path }}"
+          fi
+
+          echo "updated=true" >> $GITHUB_OUTPUT
+          echo "Updated image tag to: ${SHORT_SHA}"
+
+      - name: Configure Git
+        if: steps.update-helm.outputs.updated == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push changes
+        if: steps.update-helm.outputs.updated == 'true'
+        run: |
+          SHORT_SHA="${{ steps.short-sha.outputs.sha }}"
+
+          # Check if there are changes to commit
+          if git diff --quiet "${{ inputs.helm_values_path }}"; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add "${{ inputs.helm_values_path }}"
+          git commit -m "ci: update ${{ inputs.service_name }} image to ${SHORT_SHA}
+
+          - Image: ${{ inputs.image_name }}:${SHORT_SHA}
+          - Digest: ${{ steps.build-push.outputs.digest }}
+          - Environment: ${{ inputs.environment }}
+          - Triggered by: ${{ github.event_name }}
+          - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Push with retry logic
+          for i in 1 2 3; do
+            git pull --rebase origin ${{ github.ref_name }} || true
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "Successfully pushed changes"
+              exit 0
+            fi
+            echo "Push failed, retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "::error::Failed to push changes after 3 attempts"
+          exit 1
+
+      - name: Create deployment summary
+        run: |
+          echo "## Build Summary for ${{ inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | ${{ inputs.service_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | ${{ inputs.image_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | ${{ steps.short-sha.outputs.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Digest** | ${{ steps.build-push.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Helm Values** | ${{ inputs.helm_values_path }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,428 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'helm-charts/**'
+      - 'k8s/**'
+      - 'argocd/**'
+
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force ArgoCD sync even if no changes detected'
+        required: false
+        default: 'false'
+        type: boolean
+      sync_apps:
+        description: 'Comma-separated list of apps to sync (empty for all)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Perform dry run only (no actual deployment)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER || 'argocd.jagdevops.co.za' }}
+  ARGOCD_NAMESPACE: argocd
+  ESHOP_NAMESPACE: eshop
+
+jobs:
+  pre-deploy-validation:
+    name: Pre-Deploy Validation
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.validation.outputs.proceed }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.14.0'
+
+      - name: Validate Helm charts
+        id: validation
+        run: |
+          echo "## Pre-Deploy Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          VALIDATION_PASSED=true
+
+          for chart_dir in helm-charts/*/; do
+            chart_name=$(basename "$chart_dir")
+            if [ -f "${chart_dir}Chart.yaml" ]; then
+              echo "Validating: $chart_name"
+              if ! helm lint "$chart_dir" --strict; then
+                echo "::error::Helm lint failed for $chart_name"
+                VALIDATION_PASSED=false
+              fi
+              if ! helm template "$chart_name" "$chart_dir" > /dev/null 2>&1; then
+                echo "::error::Helm template failed for $chart_name"
+                VALIDATION_PASSED=false
+              fi
+            fi
+          done
+
+          if [ "$VALIDATION_PASSED" == "true" ]; then
+            echo "proceed=true" >> $GITHUB_OUTPUT
+            echo "All validations passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            echo "::error::Validation failed - deployment blocked"
+            echo "Validation failed - deployment blocked" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  deploy-via-argocd:
+    name: Deploy via ArgoCD
+    runs-on: ubuntu-latest
+    needs: pre-deploy-validation
+    if: needs.pre-deploy-validation.outputs.proceed == 'true'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd-linux-amd64
+          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ env.ARGOCD_SERVER }} \
+            --username ${{ secrets.ARGOCD_USERNAME }} \
+            --password ${{ secrets.ARGOCD_PASSWORD }} \
+            --grpc-web \
+            --insecure
+
+      - name: Get ArgoCD applications
+        id: get-apps
+        run: |
+          echo "## ArgoCD Applications" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get list of applications
+          APPS=$(argocd app list -o name | grep "eshop" || echo "")
+
+          if [ -z "$APPS" ]; then
+            echo "No eshop applications found in ArgoCD"
+            echo "apps=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found applications:"
+          echo "$APPS"
+          echo "apps=$APPS" >> $GITHUB_OUTPUT
+
+          echo "| Application | Status | Health |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          for app in $APPS; do
+            status=$(argocd app get "$app" -o json | jq -r '.status.sync.status')
+            health=$(argocd app get "$app" -o json | jq -r '.status.health.status')
+            echo "| $app | $status | $health |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Determine apps to sync
+        id: sync-apps
+        run: |
+          if [ -n "${{ github.event.inputs.sync_apps }}" ]; then
+            # Use specified apps
+            APPS_TO_SYNC="${{ github.event.inputs.sync_apps }}"
+            echo "Using specified apps: $APPS_TO_SYNC"
+          else
+            # Sync all eshop apps
+            APPS_TO_SYNC=$(argocd app list -o name | grep "eshop" | tr '\n' ',' | sed 's/,$//')
+            echo "Syncing all eshop apps: $APPS_TO_SYNC"
+          fi
+
+          echo "apps=$APPS_TO_SYNC" >> $GITHUB_OUTPUT
+
+      - name: Sync ArgoCD applications (Dry Run)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "## Dry Run - ArgoCD Sync" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          IFS=',' read -ra APPS <<< "${{ steps.sync-apps.outputs.apps }}"
+          for app in "${APPS[@]}"; do
+            app=$(echo "$app" | xargs)  # Trim whitespace
+            if [ -n "$app" ]; then
+              echo "Dry run sync for: $app"
+              argocd app sync "$app" --dry-run --prune 2>&1 || true
+              echo "- **$app**: Dry run completed" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Sync ArgoCD applications
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "## ArgoCD Sync Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          IFS=',' read -ra APPS <<< "${{ steps.sync-apps.outputs.apps }}"
+          SYNC_FAILED=false
+
+          for app in "${APPS[@]}"; do
+            app=$(echo "$app" | xargs)  # Trim whitespace
+            if [ -n "$app" ]; then
+              echo "Syncing: $app"
+
+              SYNC_ARGS="--prune --timeout 300"
+              if [ "${{ github.event.inputs.force_sync }}" == "true" ]; then
+                SYNC_ARGS="$SYNC_ARGS --force"
+              fi
+
+              if argocd app sync "$app" $SYNC_ARGS 2>&1; then
+                echo "- **$app**: Synced successfully" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "::error::Failed to sync $app"
+                echo "- **$app**: Sync failed" >> $GITHUB_STEP_SUMMARY
+                SYNC_FAILED=true
+              fi
+            fi
+          done
+
+          if [ "$SYNC_FAILED" == "true" ]; then
+            exit 1
+          fi
+
+      - name: Wait for deployments
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "## Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          IFS=',' read -ra APPS <<< "${{ steps.sync-apps.outputs.apps }}"
+          DEPLOY_FAILED=false
+
+          for app in "${APPS[@]}"; do
+            app=$(echo "$app" | xargs)
+            if [ -n "$app" ]; then
+              echo "Waiting for $app to be healthy..."
+
+              if argocd app wait "$app" --health --timeout 600 2>&1; then
+                echo "- **$app**: Healthy" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "::warning::$app did not become healthy within timeout"
+                echo "- **$app**: Health check timeout" >> $GITHUB_STEP_SUMMARY
+                DEPLOY_FAILED=true
+              fi
+            fi
+          done
+
+          if [ "$DEPLOY_FAILED" == "true" ]; then
+            echo "::warning::Some applications did not reach healthy state"
+          fi
+
+      - name: Verify deployment
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "## Final Application Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Application | Sync Status | Health Status | Revision |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|-------------|---------------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          APPS=$(argocd app list -o name | grep "eshop" || echo "")
+
+          for app in $APPS; do
+            info=$(argocd app get "$app" -o json)
+            sync=$(echo "$info" | jq -r '.status.sync.status')
+            health=$(echo "$info" | jq -r '.status.health.status')
+            revision=$(echo "$info" | jq -r '.status.sync.revision' | cut -c1-7)
+            echo "| $app | $sync | $health | $revision |" >> $GITHUB_STEP_SUMMARY
+          done
+
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [pre-deploy-validation, deploy-via-argocd]
+    if: always()
+
+    steps:
+      - name: Prepare notification message
+        id: message
+        run: |
+          if [ "${{ needs.deploy-via-argocd.result }}" == "success" ]; then
+            STATUS="success"
+            EMOJI="white_check_mark"
+            TITLE="Production Deployment Successful"
+            COLOR="good"
+          elif [ "${{ needs.deploy-via-argocd.result }}" == "failure" ]; then
+            STATUS="failure"
+            EMOJI="x"
+            TITLE="Production Deployment Failed"
+            COLOR="danger"
+          elif [ "${{ needs.deploy-via-argocd.result }}" == "skipped" ]; then
+            STATUS="skipped"
+            EMOJI="warning"
+            TITLE="Production Deployment Skipped"
+            COLOR="warning"
+          else
+            STATUS="unknown"
+            EMOJI="question"
+            TITLE="Production Deployment Status Unknown"
+            COLOR="warning"
+          fi
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+
+      - name: Notify via Slack
+        if: vars.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "attachments": [
+                {
+                  "color": "${{ steps.message.outputs.color }}",
+                  "blocks": [
+                    {
+                      "type": "header",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "${{ steps.message.outputs.title }}"
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "fields": [
+                        {
+                          "type": "mrkdwn",
+                          "text": "*Repository:*\n${{ github.repository }}"
+                        },
+                        {
+                          "type": "mrkdwn",
+                          "text": "*Branch:*\n${{ github.ref_name }}"
+                        },
+                        {
+                          "type": "mrkdwn",
+                          "text": "*Commit:*\n<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                        },
+                        {
+                          "type": "mrkdwn",
+                          "text": "*Triggered by:*\n${{ github.actor }}"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "actions",
+                      "elements": [
+                        {
+                          "type": "button",
+                          "text": {
+                            "type": "plain_text",
+                            "text": "View Workflow Run"
+                          },
+                          "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Notify via Microsoft Teams
+        if: vars.TEAMS_WEBHOOK_URL != ''
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "themeColor": "${{ steps.message.outputs.status == 'success' && '00FF00' || 'FF0000' }}",
+            "summary": "${{ steps.message.outputs.title }}",
+            "sections": [{
+              "activityTitle": "${{ steps.message.outputs.title }}",
+              "facts": [{
+                "name": "Repository",
+                "value": "${{ github.repository }}"
+              }, {
+                "name": "Branch",
+                "value": "${{ github.ref_name }}"
+              }, {
+                "name": "Commit",
+                "value": "${{ github.sha }}"
+              }, {
+                "name": "Triggered by",
+                "value": "${{ github.actor }}"
+              }],
+              "markdown": true
+            }],
+            "potentialAction": [{
+              "@type": "OpenUri",
+              "name": "View Workflow Run",
+              "targets": [{
+                "os": "default",
+                "uri": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              }]
+            }]
+          }' "${{ vars.TEAMS_WEBHOOK_URL }}"
+
+      - name: Create GitHub deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Create deployment
+            const deployment = await github.rest.repos.createDeployment({
+              owner,
+              repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: [],
+              description: 'Production deployment via ArgoCD'
+            });
+
+            if (deployment.data.id) {
+              // Create deployment status
+              const state = '${{ needs.deploy-via-argocd.result }}' === 'success' ? 'success' : 'failure';
+
+              await github.rest.repos.createDeploymentStatus({
+                owner,
+                repo,
+                deployment_id: deployment.data.id,
+                state: state,
+                environment: 'production',
+                environment_url: 'https://${{ env.ARGOCD_SERVER }}',
+                description: '${{ steps.message.outputs.title }}'
+              });
+            }
+
+      - name: Generate deployment summary
+        run: |
+          echo "# Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Status: ${{ steps.message.outputs.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Validation** | ${{ needs.pre-deploy-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment** | ${{ needs.deploy-via-argocd.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dry Run** | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

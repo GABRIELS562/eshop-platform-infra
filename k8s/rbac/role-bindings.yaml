@@ -1,0 +1,64 @@
+---
+# Role Bindings for eshop namespace
+---
+# Bind eshop-deployer role to ArgoCD service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eshop-deployer-binding
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
+  - kind: ServiceAccount
+    name: argocd-server
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: eshop-deployer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Bind eshop-developer role to developers group
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eshop-developer-binding
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+subjects:
+  - kind: Group
+    name: eshop-developers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: eshop-developer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Bind eshop-readonly ClusterRole to Prometheus service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: eshop-readonly-binding
+  labels:
+    app: eshop
+    env: production
+    team: platform
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
+  - kind: ServiceAccount
+    name: prometheus-server
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: eshop-readonly
+  apiGroup: rbac.authorization.k8s.io

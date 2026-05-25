@@ -1,0 +1,131 @@
+# Loki Log Queries for eShop Platform
+# Use these queries in Grafana Explore or dashboards
+
+queries:
+  # Error logs per service
+  - name: "Error Logs - All Services"
+    query: '{namespace="eshop"} |= "error" | json'
+    description: "All error logs from eshop namespace"
+
+  - name: "Error Logs - Basket API"
+    query: '{namespace="eshop", app="basket-api"} |= "error" | json'
+
+  - name: "Error Logs - Catalog API"
+    query: '{namespace="eshop", app="catalog-api"} |= "error" | json'
+
+  - name: "Error Logs - Ordering API"
+    query: '{namespace="eshop", app="ordering-api"} |= "error" | json'
+
+  - name: "Error Logs - Identity API"
+    query: '{namespace="eshop", app="identity-api"} |= "error" | json'
+
+  - name: "Error Logs - Payment API"
+    query: '{namespace="eshop", app="payment-api"} |= "error" | json'
+
+  # Slow request logs (> 1 second)
+  - name: "Slow Requests - All Services"
+    query: |
+      {namespace="eshop"}
+      | json
+      | duration > 1s
+    description: "Requests taking longer than 1 second"
+
+  - name: "Slow Requests - Detailed"
+    query: |
+      {namespace="eshop"}
+      | json
+      | __error__=""
+      | elapsed_ms > 1000
+      | line_format "{{.app}} - {{.method}} {{.path}} - {{.elapsed_ms}}ms"
+
+  # Authentication failures
+  - name: "Authentication Failures"
+    query: |
+      {namespace="eshop", app="identity-api"}
+      |~ "(?i)(authentication failed|invalid credentials|unauthorized|401)"
+    description: "Failed authentication attempts"
+
+  - name: "Login Attempts"
+    query: |
+      {namespace="eshop", app="identity-api"}
+      |~ "(?i)(login|signin|authenticate)"
+      | json
+
+  # RabbitMQ consumer errors
+  - name: "RabbitMQ Consumer Errors"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(rabbitmq|eventbus|message.*failed|consumer.*error)"
+    description: "RabbitMQ and EventBus related errors"
+
+  - name: "Message Processing Failures"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(message.*processing.*failed|integration.*event.*error)"
+
+  # Database connection errors
+  - name: "Database Connection Errors"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(database|connection.*refused|timeout.*expired|postgresql|npgsql)"
+      |~ "(?i)(error|failed|exception)"
+    description: "PostgreSQL connection issues"
+
+  - name: "Redis Connection Errors"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(redis|stackexchange.*redis)"
+      |~ "(?i)(error|failed|connection)"
+
+  # Service startup and health
+  - name: "Service Startup Events"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(started|listening|ready|initialized)"
+
+  - name: "Health Check Failures"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(health.*check.*failed|unhealthy|degraded)"
+
+  # Exception tracking
+  - name: "Unhandled Exceptions"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(unhandled.*exception|stack.*trace|fatal)"
+
+  - name: "HTTP 5xx Responses"
+    query: |
+      {namespace="eshop"}
+      | json
+      | status_code >= 500
+
+  # Rate limiting and throttling
+  - name: "Rate Limit Events"
+    query: |
+      {namespace="eshop"}
+      |~ "(?i)(rate.*limit|throttl|429)"
+
+# Dashboard panel configurations
+dashboard_panels:
+  - title: "Error Rate by Service"
+    type: "timeseries"
+    query: |
+      sum by (app) (
+        count_over_time({namespace="eshop"} |= "error" [1m])
+      )
+
+  - title: "Log Volume by Service"
+    type: "timeseries"
+    query: |
+      sum by (app) (
+        count_over_time({namespace="eshop"} [1m])
+      )
+
+  - title: "Authentication Events"
+    type: "stat"
+    query: |
+      count_over_time(
+        {namespace="eshop", app="identity-api"}
+        |~ "(?i)authentication" [24h]
+      )

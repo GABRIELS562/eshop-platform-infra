@@ -1,0 +1,20 @@
+apiVersion: v2
+name: webhook-api
+description: eShop Webhook API - Manages webhook subscriptions and event notifications
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - eshop
+  - webhook
+  - microservice
+  - rabbitmq
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/dotnet-architecture/eShopOnContainers
+dependencies: []
+annotations:
+  category: Backend Service

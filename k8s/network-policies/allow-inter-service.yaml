@@ -1,0 +1,90 @@
+---
+# Allow backend services to communicate with each other
+# This enables service-to-service communication within the eshop platform
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-inter-service
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: application
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# Allow Identity API to be accessible by all services (authentication)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-identity-api-access
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: application
+spec:
+  podSelector:
+    matchLabels:
+      app: identity-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# Allow SignalR hub connections
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-signalr-connections
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: application
+spec:
+  podSelector:
+    matchLabels:
+      app: ordering-signalr
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

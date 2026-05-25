@@ -1,0 +1,235 @@
+---
+# eShop Platform Maintenance Playbook
+# Provides operational tasks for the eShop platform
+#
+# Usage:
+#   Scale down all services:
+#     ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=scale_down
+#
+#   Scale up all services:
+#     ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=scale_up
+#
+#   Drain specific service for update:
+#     ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=drain -e service=basket-api
+#
+#   Restart a service:
+#     ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=restart -e service=catalog-api
+#
+#   View status:
+#     ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=status
+
+- name: eShop Platform Maintenance
+  hosts: k3s_cluster
+  gather_facts: no
+  become: yes
+
+  vars:
+    eshop_namespace: eshop
+    k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    action: status
+    service: ""
+    scale_replicas: 0
+
+    # List of all eShop services
+    eshop_services:
+      - basket-api
+      - catalog-api
+      - ordering-api
+      - identity-api
+      - payment-api
+      - webhook-api
+      - web-spa
+      - mobile-bff
+      - ordering-signalr
+      - api-gateway
+
+  tasks:
+    # STATUS ACTION
+    - name: Get status of all services
+      when: action == "status"
+      block:
+        - name: Get all pods
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: pods
+
+        - name: Get all deployments
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: deployments
+
+        - name: Get HPA status
+          kubernetes.core.k8s_info:
+            kind: HorizontalPodAutoscaler
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: hpas
+
+        - name: Display status
+          debug:
+            msg: |
+              === eShop Platform Status ===
+
+              Pods ({{ pods.resources | length }}):
+              {% for pod in pods.resources %}
+              - {{ pod.metadata.name }}: {{ pod.status.phase }}
+              {% endfor %}
+
+              Deployments:
+              {% for deploy in deployments.resources %}
+              - {{ deploy.metadata.name }}: {{ deploy.status.readyReplicas | default(0) }}/{{ deploy.status.replicas | default(0) }}
+              {% endfor %}
+
+              HPA Status:
+              {% for hpa in hpas.resources %}
+              - {{ hpa.metadata.name }}: {{ hpa.status.currentReplicas | default(0) }}/{{ hpa.spec.maxReplicas }} (min: {{ hpa.spec.minReplicas }})
+              {% endfor %}
+
+    # SCALE DOWN ACTION
+    - name: Scale down all services
+      when: action == "scale_down"
+      block:
+        - name: Disable HPA for all services
+          kubernetes.core.k8s:
+            state: absent
+            kind: HorizontalPodAutoscaler
+            name: "{{ item }}"
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          loop: "{{ eshop_services }}"
+          ignore_errors: yes
+
+        - name: Scale deployments to 0
+          kubernetes.core.k8s_scale:
+            kind: Deployment
+            name: "{{ item }}"
+            namespace: "{{ eshop_namespace }}"
+            replicas: 0
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          loop: "{{ eshop_services }}"
+          ignore_errors: yes
+
+        - name: Display scale down complete
+          debug:
+            msg: "All eShop services scaled down to 0 replicas"
+
+    # SCALE UP ACTION
+    - name: Scale up all services
+      when: action == "scale_up"
+      block:
+        - name: Scale deployments to 2
+          kubernetes.core.k8s_scale:
+            kind: Deployment
+            name: "{{ item }}"
+            namespace: "{{ eshop_namespace }}"
+            replicas: 2
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          loop: "{{ eshop_services }}"
+          ignore_errors: yes
+
+        - name: Re-apply HPA configurations
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ playbook_dir }}/../helm-charts/{{ item }}/templates/hpa.yaml"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          loop: "{{ eshop_services }}"
+          ignore_errors: yes
+
+        - name: Wait for services to be ready
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            name: "{{ item }}"
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: deploy_status
+          until: deploy_status.resources[0].status.readyReplicas | default(0) >= 1
+          retries: 30
+          delay: 10
+          loop: "{{ eshop_services }}"
+          ignore_errors: yes
+
+        - name: Display scale up complete
+          debug:
+            msg: "All eShop services scaled up"
+
+    # DRAIN SERVICE ACTION
+    - name: Drain specific service for update
+      when: action == "drain" and service != ""
+      block:
+        - name: Validate service name
+          fail:
+            msg: "Invalid service: {{ service }}. Must be one of: {{ eshop_services | join(', ') }}"
+          when: service not in eshop_services
+
+        - name: Get current replica count
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            name: "{{ service }}"
+            namespace: "{{ eshop_namespace }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: current_deploy
+
+        - name: Store original replica count
+          set_fact:
+            original_replicas: "{{ current_deploy.resources[0].spec.replicas }}"
+
+        - name: Scale down to 0
+          kubernetes.core.k8s_scale:
+            kind: Deployment
+            name: "{{ service }}"
+            namespace: "{{ eshop_namespace }}"
+            replicas: 0
+            kubeconfig: "{{ k3s_kubeconfig }}"
+
+        - name: Wait for pods to terminate
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "{{ eshop_namespace }}"
+            label_selectors:
+              - "app={{ service }}"
+            kubeconfig: "{{ k3s_kubeconfig }}"
+          register: service_pods
+          until: service_pods.resources | length == 0
+          retries: 30
+          delay: 5
+
+        - name: Display drain complete
+          debug:
+            msg: |
+              Service {{ service }} drained.
+              Original replicas: {{ original_replicas }}
+
+              To restore, run:
+              ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=scale_up -e service={{ service }}
+
+    # RESTART SERVICE ACTION
+    - name: Restart specific service
+      when: action == "restart" and service != ""
+      block:
+        - name: Validate service name
+          fail:
+            msg: "Invalid service: {{ service }}. Must be one of: {{ eshop_services | join(', ') }}"
+          when: service not in eshop_services
+
+        - name: Rollout restart deployment
+          command: >
+            kubectl rollout restart deployment/{{ service }}
+            -n {{ eshop_namespace }}
+            --kubeconfig={{ k3s_kubeconfig }}
+          register: restart_result
+
+        - name: Wait for rollout to complete
+          command: >
+            kubectl rollout status deployment/{{ service }}
+            -n {{ eshop_namespace }}
+            --kubeconfig={{ k3s_kubeconfig }}
+            --timeout=300s
+          register: rollout_status
+
+        - name: Display restart complete
+          debug:
+            msg: "Service {{ service }} restarted successfully"

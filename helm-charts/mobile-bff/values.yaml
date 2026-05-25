@@ -1,0 +1,145 @@
+# Default values for mobile-bff
+# This is a YAML-formatted file.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/gabriels562/mobile-bff
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: mobile-bff-sa
+  annotations: {}
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "80"
+  prometheus.io/path: "/metrics"
+
+podLabels:
+  app: mobile-bff
+  tier: backend
+  env: production
+  team: platform
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  host: mobile-bff.jagdevops.co.za
+  paths:
+    - path: /
+      pathType: Prefix
+  tls:
+    - secretName: mobile-bff-tls
+      hosts:
+        - mobile-bff.jagdevops.co.za
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "200m"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 80
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 80
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /health/live
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - mobile-bff
+          topologyKey: kubernetes.io/hostname
+
+vault:
+  enabled: true
+  secretPath: secret/eshop/mobile-bff
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+env:
+  - name: ASPNETCORE_ENVIRONMENT
+    value: "Production"
+  - name: ASPNETCORE_URLS
+    value: "http://+:80"
+
+envFrom:
+  - secretRef:
+      name: mobile-bff-secrets
+
+configMap:
+  enabled: true
+  data:
+    Identity__Url: "http://identity-api.eshop.svc.cluster.local"
+    Catalog__Url: "http://catalog-api.eshop.svc.cluster.local"
+    Ordering__Url: "http://ordering-api.eshop.svc.cluster.local"
+    Basket__Url: "http://basket-api.eshop.svc.cluster.local"

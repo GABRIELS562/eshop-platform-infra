@@ -1,0 +1,14 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mobile-bff.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mobile-bff.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "mobile-bff.selectorLabels" . | nindent 6 }}
+{{- end }}

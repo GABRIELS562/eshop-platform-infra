@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seq
+  namespace: argocd
+  labels:
+    app: seq
+    env: production
+    team: platform
+    component: infrastructure
+spec:
+  project: eshop
+  source:
+    repoURL: https://github.com/GABRIELS562/eshop-platform-infra
+    targetRevision: main
+    path: k8s/infrastructure/seq
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eshop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

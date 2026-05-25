@@ -1,0 +1,21 @@
+apiVersion: v2
+name: catalog-api
+description: eShop Catalog API - Manages product catalog with database and event publishing
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - eshop
+  - catalog
+  - microservice
+  - database
+  - rabbitmq
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/dotnet-architecture/eShopOnContainers
+dependencies: []
+annotations:
+  category: Backend Service

@@ -1,0 +1,19 @@
+---
+# Default deny all ingress and egress in eshop namespace
+# This is the foundation of network security - deny everything by default
+# and explicitly allow only necessary traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

@@ -1,0 +1,279 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-init-scripts
+  labels:
+    app: postgresql
+    env: production
+    team: platform
+    version: "16"
+data:
+  01-create-databases.sql: |
+    -- Create databases for eShop Platform services
+
+    -- Catalog Service Database
+    CREATE DATABASE catalog_db;
+    GRANT ALL PRIVILEGES ON DATABASE catalog_db TO eshop;
+
+    -- Identity Service Database
+    CREATE DATABASE identity_db;
+    GRANT ALL PRIVILEGES ON DATABASE identity_db TO eshop;
+
+    -- Ordering Service Database
+    CREATE DATABASE ordering_db;
+    GRANT ALL PRIVILEGES ON DATABASE ordering_db TO eshop;
+
+  02-catalog-schema.sql: |
+    -- Catalog Service Schema
+    \c catalog_db;
+
+    -- Create extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+    -- Create schema
+    CREATE SCHEMA IF NOT EXISTS catalog;
+
+    -- Grant permissions
+    GRANT ALL ON SCHEMA catalog TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA catalog GRANT ALL ON TABLES TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA catalog GRANT ALL ON SEQUENCES TO eshop;
+
+    -- Catalog Types table
+    CREATE TABLE IF NOT EXISTS catalog.catalog_types (
+        id SERIAL PRIMARY KEY,
+        type_name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Catalog Brands table
+    CREATE TABLE IF NOT EXISTS catalog.catalog_brands (
+        id SERIAL PRIMARY KEY,
+        brand_name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Catalog Items table
+    CREATE TABLE IF NOT EXISTS catalog.catalog_items (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        price DECIMAL(18,2) NOT NULL,
+        picture_file_name VARCHAR(255),
+        picture_uri VARCHAR(500),
+        catalog_type_id INTEGER NOT NULL REFERENCES catalog.catalog_types(id),
+        catalog_brand_id INTEGER NOT NULL REFERENCES catalog.catalog_brands(id),
+        available_stock INTEGER NOT NULL DEFAULT 0,
+        restock_threshold INTEGER NOT NULL DEFAULT 0,
+        max_stock_threshold INTEGER NOT NULL DEFAULT 0,
+        on_reorder BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Indexes
+    CREATE INDEX IF NOT EXISTS idx_catalog_items_name ON catalog.catalog_items USING gin(name gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_catalog_items_type ON catalog.catalog_items(catalog_type_id);
+    CREATE INDEX IF NOT EXISTS idx_catalog_items_brand ON catalog.catalog_items(catalog_brand_id);
+
+    -- Insert seed data
+    INSERT INTO catalog.catalog_types (type_name) VALUES
+        ('Mug'), ('T-Shirt'), ('Sheet'), ('USB Memory Stick')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO catalog.catalog_brands (brand_name) VALUES
+        ('.NET'), ('Azure'), ('Visual Studio'), ('SQL Server'), ('Other')
+    ON CONFLICT DO NOTHING;
+
+  03-identity-schema.sql: |
+    -- Identity Service Schema
+    \c identity_db;
+
+    -- Create extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "citext";
+
+    -- Create schema
+    CREATE SCHEMA IF NOT EXISTS identity;
+
+    -- Grant permissions
+    GRANT ALL ON SCHEMA identity TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA identity GRANT ALL ON TABLES TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA identity GRANT ALL ON SEQUENCES TO eshop;
+
+    -- Users table
+    CREATE TABLE IF NOT EXISTS identity.users (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        username VARCHAR(256) NOT NULL UNIQUE,
+        normalized_username VARCHAR(256) NOT NULL UNIQUE,
+        email CITEXT NOT NULL UNIQUE,
+        normalized_email CITEXT NOT NULL UNIQUE,
+        email_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        password_hash TEXT NOT NULL,
+        security_stamp TEXT,
+        concurrency_stamp TEXT,
+        phone_number VARCHAR(50),
+        phone_number_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        lockout_end TIMESTAMP WITH TIME ZONE,
+        lockout_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        access_failed_count INTEGER NOT NULL DEFAULT 0,
+        first_name VARCHAR(100),
+        last_name VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Roles table
+    CREATE TABLE IF NOT EXISTS identity.roles (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR(256) NOT NULL UNIQUE,
+        normalized_name VARCHAR(256) NOT NULL UNIQUE,
+        concurrency_stamp TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- User Roles table
+    CREATE TABLE IF NOT EXISTS identity.user_roles (
+        user_id UUID NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+        role_id UUID NOT NULL REFERENCES identity.roles(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, role_id)
+    );
+
+    -- User Claims table
+    CREATE TABLE IF NOT EXISTS identity.user_claims (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+        claim_type VARCHAR(256) NOT NULL,
+        claim_value TEXT
+    );
+
+    -- Refresh Tokens table
+    CREATE TABLE IF NOT EXISTS identity.refresh_tokens (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+        token TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        revoked_at TIMESTAMP WITH TIME ZONE,
+        replaced_by_token TEXT
+    );
+
+    -- Indexes
+    CREATE INDEX IF NOT EXISTS idx_users_email ON identity.users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_username ON identity.users(username);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON identity.refresh_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON identity.refresh_tokens(token);
+
+    -- Insert default roles
+    INSERT INTO identity.roles (name, normalized_name) VALUES
+        ('Admin', 'ADMIN'),
+        ('User', 'USER'),
+        ('Manager', 'MANAGER')
+    ON CONFLICT DO NOTHING;
+
+  04-ordering-schema.sql: |
+    -- Ordering Service Schema
+    \c ordering_db;
+
+    -- Create extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    -- Create schema
+    CREATE SCHEMA IF NOT EXISTS ordering;
+
+    -- Grant permissions
+    GRANT ALL ON SCHEMA ordering TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA ordering GRANT ALL ON TABLES TO eshop;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA ordering GRANT ALL ON SEQUENCES TO eshop;
+
+    -- Order Status enum type
+    DO $$ BEGIN
+        CREATE TYPE ordering.order_status AS ENUM (
+            'submitted',
+            'awaiting_validation',
+            'stock_confirmed',
+            'paid',
+            'shipped',
+            'cancelled'
+        );
+    EXCEPTION
+        WHEN duplicate_object THEN null;
+    END $$;
+
+    -- Buyers table
+    CREATE TABLE IF NOT EXISTS ordering.buyers (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        identity_guid UUID NOT NULL UNIQUE,
+        name VARCHAR(256) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Payment Methods table
+    CREATE TABLE IF NOT EXISTS ordering.payment_methods (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        buyer_id UUID NOT NULL REFERENCES ordering.buyers(id) ON DELETE CASCADE,
+        card_type VARCHAR(50) NOT NULL,
+        card_number VARCHAR(25) NOT NULL,
+        card_holder_name VARCHAR(256) NOT NULL,
+        expiration_date DATE NOT NULL,
+        alias VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Addresses table
+    CREATE TABLE IF NOT EXISTS ordering.addresses (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        street VARCHAR(256) NOT NULL,
+        city VARCHAR(100) NOT NULL,
+        state VARCHAR(100),
+        country VARCHAR(100) NOT NULL,
+        zip_code VARCHAR(20) NOT NULL
+    );
+
+    -- Orders table
+    CREATE TABLE IF NOT EXISTS ordering.orders (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        order_number SERIAL,
+        buyer_id UUID NOT NULL REFERENCES ordering.buyers(id),
+        payment_method_id UUID REFERENCES ordering.payment_methods(id),
+        address_id UUID REFERENCES ordering.addresses(id),
+        order_status ordering.order_status NOT NULL DEFAULT 'submitted',
+        description TEXT,
+        order_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Order Items table
+    CREATE TABLE IF NOT EXISTS ordering.order_items (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        order_id UUID NOT NULL REFERENCES ordering.orders(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        unit_price DECIMAL(18,2) NOT NULL,
+        discount DECIMAL(18,2) NOT NULL DEFAULT 0,
+        units INTEGER NOT NULL,
+        picture_url VARCHAR(500)
+    );
+
+    -- Outbox table for transactional messaging
+    CREATE TABLE IF NOT EXISTS ordering.outbox (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        event_type VARCHAR(256) NOT NULL,
+        payload JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP WITH TIME ZONE,
+        error TEXT
+    );
+
+    -- Indexes
+    CREATE INDEX IF NOT EXISTS idx_orders_buyer ON ordering.orders(buyer_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON ordering.orders(order_status);
+    CREATE INDEX IF NOT EXISTS idx_orders_date ON ordering.orders(order_date);
+    CREATE INDEX IF NOT EXISTS idx_order_items_order ON ordering.order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_outbox_unprocessed ON ordering.outbox(created_at) WHERE processed_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_payment_methods_buyer ON ordering.payment_methods(buyer_id);

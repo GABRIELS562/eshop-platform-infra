@@ -1,0 +1,49 @@
+---
+# Allow egress to Vault on Server2 for secret retrieval
+# Server2 Tailscale IP: 100.103.13.92
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-vault
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: secrets
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 100.103.13.92/32
+      ports:
+        - protocol: TCP
+          port: 8200
+---
+# Allow External Secrets Operator to communicate with Vault
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-secrets-operator
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: secrets
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 100.103.13.92/32
+      ports:
+        - protocol: TCP
+          port: 8200

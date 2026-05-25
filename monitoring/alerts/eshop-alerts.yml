@@ -1,0 +1,360 @@
+# Prometheus Alert Rules for eShop Platform
+# Production-ready alerting configuration
+
+groups:
+  # Service-level alerts for all eShop microservices
+  - name: eshop-services
+    interval: 30s
+    rules:
+      # Service down more than 2 minutes
+      - alert: EshopServiceDown
+        expr: |
+          up{job=~"eshop-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "eShop service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} in namespace {{ $labels.namespace }} has been down for more than 2 minutes."
+          runbook_url: "https://runbooks.eshop.io/service-down"
+          dashboard_url: "https://grafana.eshop.io/d/eshop-overview"
+
+      # HTTP 5xx rate above 5% per service
+      - alert: EshopHighErrorRate
+        expr: |
+          (
+            sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*", status=~"5.."}[5m]))
+            /
+            sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*"}[5m]))
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High HTTP 5xx error rate for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has {{ printf \"%.2f\" $value }}% HTTP 5xx errors in the last 5 minutes."
+          runbook_url: "https://runbooks.eshop.io/high-error-rate"
+
+      # Pod restart count above 3 in 5 minutes
+      - alert: EshopPodRestartLoop
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="eshop", pod=~".*-api-.*|.*-service-.*"}[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} is in a restart loop"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has restarted {{ printf \"%.0f\" $value }} times in the last 5 minutes."
+          runbook_url: "https://runbooks.eshop.io/pod-restart-loop"
+
+      # HPA at maximum replicas
+      - alert: EshopHPAMaxReplicas
+        expr: |
+          (
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="eshop"}
+            ==
+            kube_horizontalpodautoscaler_spec_max_replicas{namespace="eshop"}
+          )
+          and
+          (
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="eshop"} > 1
+          )
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "HPA {{ $labels.horizontalpodautoscaler }} is at maximum replicas"
+          description: "HPA {{ $labels.horizontalpodautoscaler }} in namespace {{ $labels.namespace }} has been at maximum replicas ({{ $value }}) for more than 15 minutes. Consider increasing max replicas."
+          runbook_url: "https://runbooks.eshop.io/hpa-max-replicas"
+
+      # Service endpoint not ready
+      - alert: EshopEndpointsNotReady
+        expr: |
+          kube_endpoint_address_not_ready{namespace="eshop"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Endpoints not ready for {{ $labels.endpoint }}"
+          description: "Service {{ $labels.endpoint }} has {{ $value }} endpoints not ready."
+
+  # Infrastructure alerts for backing services
+  - name: eshop-infrastructure
+    interval: 30s
+    rules:
+      # RabbitMQ queue depth above 1000
+      - alert: RabbitMQHighQueueDepth
+        expr: |
+          rabbitmq_queue_messages{namespace="eshop"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "RabbitMQ queue {{ $labels.queue }} has high message depth"
+          description: "Queue {{ $labels.queue }} on vhost {{ $labels.vhost }} has {{ printf \"%.0f\" $value }} messages. Consumers may be slow or stuck."
+          runbook_url: "https://runbooks.eshop.io/rabbitmq-high-queue"
+
+      - alert: RabbitMQCriticalQueueDepth
+        expr: |
+          rabbitmq_queue_messages{namespace="eshop"} > 10000
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "RabbitMQ queue {{ $labels.queue }} has critical message depth"
+          description: "Queue {{ $labels.queue }} on vhost {{ $labels.vhost }} has {{ printf \"%.0f\" $value }} messages. Immediate attention required."
+          runbook_url: "https://runbooks.eshop.io/rabbitmq-critical-queue"
+
+      # Redis memory above 80%
+      - alert: RedisHighMemoryUsage
+        expr: |
+          (redis_memory_used_bytes{namespace="eshop"} / redis_memory_max_bytes{namespace="eshop"}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis memory usage above 80%"
+          description: "Redis instance {{ $labels.instance }} is using {{ printf \"%.1f\" $value }}% of available memory."
+          runbook_url: "https://runbooks.eshop.io/redis-high-memory"
+
+      - alert: RedisCriticalMemoryUsage
+        expr: |
+          (redis_memory_used_bytes{namespace="eshop"} / redis_memory_max_bytes{namespace="eshop"}) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis memory usage critical"
+          description: "Redis instance {{ $labels.instance }} is using {{ printf \"%.1f\" $value }}% of available memory. OOM risk."
+          runbook_url: "https://runbooks.eshop.io/redis-critical-memory"
+
+      # PostgreSQL connections above 80% of max
+      - alert: PostgreSQLHighConnections
+        expr: |
+          (
+            sum by (instance, namespace) (pg_stat_activity_count{namespace="eshop"})
+            /
+            pg_settings_max_connections{namespace="eshop"}
+          ) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection usage above 80%"
+          description: "PostgreSQL instance {{ $labels.instance }} is using {{ printf \"%.1f\" $value }}% of max connections."
+          runbook_url: "https://runbooks.eshop.io/postgresql-high-connections"
+
+      - alert: PostgreSQLCriticalConnections
+        expr: |
+          (
+            sum by (instance, namespace) (pg_stat_activity_count{namespace="eshop"})
+            /
+            pg_settings_max_connections{namespace="eshop"}
+          ) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection usage critical"
+          description: "PostgreSQL instance {{ $labels.instance }} is using {{ printf \"%.1f\" $value }}% of max connections. Connection exhaustion imminent."
+          runbook_url: "https://runbooks.eshop.io/postgresql-critical-connections"
+
+      # PostgreSQL replication lag
+      - alert: PostgreSQLReplicationLag
+        expr: |
+          pg_replication_lag{namespace="eshop"} > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL replication lag detected"
+          description: "PostgreSQL replica {{ $labels.instance }} is lagging by {{ printf \"%.0f\" $value }} seconds."
+          runbook_url: "https://runbooks.eshop.io/postgresql-replication-lag"
+
+      - alert: PostgreSQLReplicationLagCritical
+        expr: |
+          pg_replication_lag{namespace="eshop"} > 120
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL critical replication lag"
+          description: "PostgreSQL replica {{ $labels.instance }} is lagging by {{ printf \"%.0f\" $value }} seconds. Data inconsistency risk."
+          runbook_url: "https://runbooks.eshop.io/postgresql-replication-lag"
+
+      # RabbitMQ node down
+      - alert: RabbitMQNodeDown
+        expr: |
+          rabbitmq_up{namespace="eshop"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "RabbitMQ node is down"
+          description: "RabbitMQ node {{ $labels.instance }} is not responding."
+          runbook_url: "https://runbooks.eshop.io/rabbitmq-node-down"
+
+      # Redis not available
+      - alert: RedisDown
+        expr: |
+          redis_up{namespace="eshop"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis instance is down"
+          description: "Redis instance {{ $labels.instance }} is not responding."
+          runbook_url: "https://runbooks.eshop.io/redis-down"
+
+      # PostgreSQL down
+      - alert: PostgreSQLDown
+        expr: |
+          pg_up{namespace="eshop"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL instance is down"
+          description: "PostgreSQL instance {{ $labels.instance }} is not responding."
+          runbook_url: "https://runbooks.eshop.io/postgresql-down"
+
+  # SLO-based alerts
+  - name: eshop-slos
+    interval: 30s
+    rules:
+      # Request latency P99 above 1s
+      - alert: EshopHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (job, le) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*"}[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High P99 latency for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has P99 latency of {{ printf \"%.2f\" $value }}s, exceeding 1s SLO."
+          runbook_url: "https://runbooks.eshop.io/high-latency"
+
+      - alert: EshopHighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (job, le) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*"}[5m]))
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High P95 latency for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has P95 latency of {{ printf \"%.2f\" $value }}s, exceeding 500ms threshold."
+
+      # Error budget burn rate alerts (multi-window)
+      # Fast burn - consuming budget at 14.4x rate (2% budget in 1 hour)
+      - alert: EshopErrorBudgetFastBurn
+        expr: |
+          (
+            1 - (
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*", status!~"5.."}[1h]))
+              /
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*"}[1h]))
+            )
+          ) > (14.4 * 0.001)
+          and
+          (
+            1 - (
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*", status!~"5.."}[5m]))
+              /
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*"}[5m]))
+            )
+          ) > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          alert_type: error_budget
+        annotations:
+          summary: "Error budget fast burn for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} is consuming error budget at 14.4x rate. At this rate, monthly budget will be exhausted in ~2 days."
+          runbook_url: "https://runbooks.eshop.io/error-budget-burn"
+
+      # Slow burn - consuming budget at 3x rate (10% budget in 3 days)
+      - alert: EshopErrorBudgetSlowBurn
+        expr: |
+          (
+            1 - (
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*", status!~"5.."}[6h]))
+              /
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*"}[6h]))
+            )
+          ) > (3 * 0.001)
+          and
+          (
+            1 - (
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*", status!~"5.."}[30m]))
+              /
+              sum by (job) (rate(http_requests_total{job=~"eshop-.*"}[30m]))
+            )
+          ) > (3 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+          alert_type: error_budget
+        annotations:
+          summary: "Error budget slow burn for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} is consuming error budget at 3x rate. At this rate, monthly budget will be exhausted in ~10 days."
+          runbook_url: "https://runbooks.eshop.io/error-budget-burn"
+
+      # SLO availability below target (99.9% = 0.1% error budget)
+      - alert: EshopSLOAvailabilityBreach
+        expr: |
+          (
+            sum by (job) (increase(http_requests_total{job=~"eshop-.*", status!~"5.."}[24h]))
+            /
+            sum by (job) (increase(http_requests_total{job=~"eshop-.*"}[24h]))
+          ) < 0.999
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          alert_type: slo
+        annotations:
+          summary: "SLO availability breach for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} 24h availability is {{ printf \"%.3f\" $value }}, below 99.9% SLO target."
+
+      # Apdex score below threshold
+      - alert: EshopLowApdexScore
+        expr: |
+          (
+            sum by (job) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*", le="0.5"}[5m]))
+            +
+            sum by (job) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*", le="2.0"}[5m])) / 2
+          )
+          /
+          sum by (job) (rate(http_request_duration_seconds_count{job=~"eshop-.*"}[5m]))
+          < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low Apdex score for {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has Apdex score of {{ printf \"%.2f\" $value }}, below 0.8 threshold."

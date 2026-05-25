@@ -1,0 +1,401 @@
+name: Develop CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'helm-charts/**'
+      - 'k8s/**'
+      - 'argocd/**'
+      - '.github/workflows/**'
+
+  workflow_dispatch:
+    inputs:
+      run_all_checks:
+        description: 'Run all checks regardless of changed files'
+        required: false
+        default: 'true'
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HELM_VERSION: '3.14.0'
+  KUBECTL_VERSION: '1.29.0'
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      helm_changed: ${{ steps.changes.outputs.helm }}
+      k8s_changed: ${{ steps.changes.outputs.k8s }}
+      argocd_changed: ${{ steps.changes.outputs.argocd }}
+      any_changed: ${{ steps.changes.outputs.any }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if [ "${{ github.event.inputs.run_all_checks }}" == "true" ]; then
+            echo "helm=true" >> $GITHUB_OUTPUT
+            echo "k8s=true" >> $GITHUB_OUTPUT
+            echo "argocd=true" >> $GITHUB_OUTPUT
+            echo "any=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+
+          HELM_CHANGED="false"
+          K8S_CHANGED="false"
+          ARGOCD_CHANGED="false"
+
+          for file in $CHANGED_FILES; do
+            if [[ "$file" == helm-charts/* ]]; then
+              HELM_CHANGED="true"
+            fi
+            if [[ "$file" == k8s/* ]]; then
+              K8S_CHANGED="true"
+            fi
+            if [[ "$file" == argocd/* ]]; then
+              ARGOCD_CHANGED="true"
+            fi
+          done
+
+          echo "helm=${HELM_CHANGED}" >> $GITHUB_OUTPUT
+          echo "k8s=${K8S_CHANGED}" >> $GITHUB_OUTPUT
+          echo "argocd=${ARGOCD_CHANGED}" >> $GITHUB_OUTPUT
+
+          if [ "$HELM_CHANGED" == "true" ] || [ "$K8S_CHANGED" == "true" ] || [ "$ARGOCD_CHANGED" == "true" ]; then
+            echo "any=true" >> $GITHUB_OUTPUT
+          else
+            echo "any=false" >> $GITHUB_OUTPUT
+          fi
+
+  lint-yaml:
+    name: Lint YAML Files
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Create yamllint config
+        run: |
+          cat > .yamllint.yml << 'EOF'
+          extends: default
+
+          rules:
+            line-length:
+              max: 200
+              level: warning
+            indentation:
+              spaces: 2
+              indent-sequences: true
+            truthy:
+              allowed-values: ['true', 'false', 'yes', 'no']
+            comments:
+              min-spaces-from-content: 1
+            document-start: disable
+            braces:
+              min-spaces-inside: 0
+              max-spaces-inside: 1
+            brackets:
+              min-spaces-inside: 0
+              max-spaces-inside: 1
+
+          ignore: |
+            .github/
+            **/templates/
+          EOF
+
+      - name: Run yamllint on k8s manifests
+        if: needs.detect-changes.outputs.k8s_changed == 'true'
+        run: |
+          echo "## YAML Lint Results - K8s Manifests" >> $GITHUB_STEP_SUMMARY
+          if yamllint -c .yamllint.yml k8s/ 2>&1 | tee yamllint-k8s.log; then
+            echo "All K8s manifests passed linting" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::warning::YAML lint issues found in K8s manifests"
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat yamllint-k8s.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run yamllint on Helm values
+        if: needs.detect-changes.outputs.helm_changed == 'true'
+        run: |
+          echo "## YAML Lint Results - Helm Values" >> $GITHUB_STEP_SUMMARY
+          find helm-charts -name "values*.yaml" -type f | while read file; do
+            echo "Linting: $file"
+            if yamllint -c .yamllint.yml "$file" 2>&1 | tee -a yamllint-helm.log; then
+              echo "Passed: $file"
+            else
+              echo "::warning::YAML lint issues in $file"
+            fi
+          done
+          if [ -f yamllint-helm.log ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat yamllint-helm.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run yamllint on ArgoCD manifests
+        if: needs.detect-changes.outputs.argocd_changed == 'true'
+        run: |
+          if [ -d argocd ]; then
+            echo "## YAML Lint Results - ArgoCD" >> $GITHUB_STEP_SUMMARY
+            if yamllint -c .yamllint.yml argocd/ 2>&1 | tee yamllint-argocd.log; then
+              echo "All ArgoCD manifests passed linting" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "::warning::YAML lint issues found in ArgoCD manifests"
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              cat yamllint-argocd.log >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.helm_changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Lint all Helm charts
+        run: |
+          echo "## Helm Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          FAILED_CHARTS=""
+          PASSED_CHARTS=""
+
+          for chart_dir in helm-charts/*/; do
+            chart_name=$(basename "$chart_dir")
+            echo "Linting chart: $chart_name"
+
+            if [ -f "${chart_dir}Chart.yaml" ]; then
+              if helm lint "$chart_dir" 2>&1 | tee -a lint-output.log; then
+                PASSED_CHARTS="${PASSED_CHARTS} ${chart_name}"
+                echo "| $chart_name | Passed |" >> chart-results.md
+              else
+                FAILED_CHARTS="${FAILED_CHARTS} ${chart_name}"
+                echo "| $chart_name | Failed |" >> chart-results.md
+                echo "::error::Helm lint failed for chart: $chart_name"
+              fi
+            else
+              echo "::warning::No Chart.yaml found in $chart_dir"
+            fi
+          done
+
+          echo "| Chart | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          if [ -f chart-results.md ]; then
+            cat chart-results.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -n "$FAILED_CHARTS" ]; then
+            echo ""
+            echo "### Failed Charts" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat lint-output.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Template validation
+        run: |
+          echo "## Helm Template Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for chart_dir in helm-charts/*/; do
+            chart_name=$(basename "$chart_dir")
+
+            if [ -f "${chart_dir}Chart.yaml" ]; then
+              echo "Templating chart: $chart_name"
+
+              if helm template "$chart_name" "$chart_dir" > /dev/null 2>&1; then
+                echo "Template validation passed for $chart_name"
+              else
+                echo "::error::Template validation failed for $chart_name"
+                helm template "$chart_name" "$chart_dir"
+                exit 1
+              fi
+            fi
+          done
+
+          echo "All charts templated successfully" >> $GITHUB_STEP_SUMMARY
+
+  validate-k8s-manifests:
+    name: Validate K8s Manifests
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.k8s_changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install kubeval
+        run: |
+          wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+          tar xf kubeval-linux-amd64.tar.gz
+          sudo mv kubeval /usr/local/bin/
+
+      - name: Validate Kubernetes manifests
+        run: |
+          echo "## Kubernetes Manifest Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          VALIDATION_FAILED=false
+
+          find k8s -name "*.yaml" -type f | while read manifest; do
+            echo "Validating: $manifest"
+            if kubeval --strict "$manifest" 2>&1 | tee -a kubeval-output.log; then
+              echo "Passed: $manifest"
+            else
+              echo "::error::Validation failed for $manifest"
+              VALIDATION_FAILED=true
+            fi
+          done
+
+          if [ "$VALIDATION_FAILED" == "true" ]; then
+            echo "### Validation Errors" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat kubeval-output.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "All Kubernetes manifests validated successfully" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check for deprecated APIs
+        run: |
+          echo "## Deprecated API Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Install pluto for deprecated API detection
+          wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.0/pluto_5.19.0_linux_amd64.tar.gz
+          tar xf pluto_5.19.0_linux_amd64.tar.gz
+          sudo mv pluto /usr/local/bin/
+
+          # Check for deprecated APIs
+          DEPRECATED_FOUND=false
+
+          for manifest in $(find k8s -name "*.yaml" -type f); do
+            if pluto detect-files -d "$manifest" 2>&1 | grep -v "No output"; then
+              DEPRECATED_FOUND=true
+              echo "::warning::Deprecated APIs found in $manifest"
+            fi
+          done
+
+          if [ "$DEPRECATED_FOUND" == "true" ]; then
+            echo "Deprecated APIs detected. Please review and update." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No deprecated APIs found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubesec
+        run: |
+          wget https://github.com/controlplaneio/kubesec/releases/download/v2.14.0/kubesec_linux_amd64.tar.gz
+          tar xf kubesec_linux_amd64.tar.gz
+          sudo mv kubesec /usr/local/bin/
+
+      - name: Run kubesec on K8s manifests
+        if: needs.detect-changes.outputs.k8s_changed == 'true'
+        run: |
+          echo "## Security Scan Results - K8s Manifests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for manifest in $(find k8s -name "*.yaml" -type f); do
+            echo "Scanning: $manifest"
+            result=$(kubesec scan "$manifest" 2>/dev/null || echo "[]")
+
+            if [ "$result" != "[]" ]; then
+              score=$(echo "$result" | jq -r '.[0].score // 0')
+              echo "Score for $manifest: $score"
+
+              if [ "$score" -lt 0 ]; then
+                echo "::warning::Low security score ($score) for $manifest"
+              fi
+            fi
+          done
+
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint-yaml, helm-lint, validate-k8s-manifests, security-scan]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# Develop CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| YAML Lint | ${{ needs.lint-yaml.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Helm Lint | ${{ needs.helm-lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| K8s Validation | ${{ needs.validate-k8s-manifests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check for failures
+        if: |
+          needs.lint-yaml.result == 'failure' ||
+          needs.helm-lint.result == 'failure' ||
+          needs.validate-k8s-manifests.result == 'failure'
+        run: |
+          echo "::error::One or more CI checks failed"
+          exit 1

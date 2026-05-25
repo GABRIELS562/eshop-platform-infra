@@ -8,6 +8,7 @@ image:
   tag: "10a9632"
   tag: "0db7625"
   tag: "639b5bb"
+  tag: "9dd3d01"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:

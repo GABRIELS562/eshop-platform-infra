@@ -1,0 +1,146 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: eshop-alerts
+  namespace: monitoring
+  labels:
+    app: eshop
+    prometheus: k8s
+    role: alert-rules
+    release: prometheus
+spec:
+  groups:
+    - name: eshop-services
+      interval: 30s
+      rules:
+        - alert: EshopServiceDown
+          expr: up{job=~"eshop-.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "eShop service {{ $labels.job }} is down"
+            description: "Service {{ $labels.job }} has been down for more than 2 minutes."
+
+        - alert: EshopHighErrorRate
+          expr: |
+            (
+              sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*", status=~"5.."}[5m]))
+              /
+              sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*"}[5m]))
+            ) * 100 > 5
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "High HTTP 5xx error rate for {{ $labels.job }}"
+            description: "Service {{ $labels.job }} has {{ printf \"%.2f\" $value }}% HTTP 5xx errors."
+
+        - alert: EshopPodRestartLoop
+          expr: increase(kube_pod_container_status_restarts_total{namespace="eshop"}[5m]) > 3
+          for: 1m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Pod {{ $labels.pod }} is in a restart loop"
+            description: "Pod {{ $labels.pod }} has restarted {{ printf \"%.0f\" $value }} times in 5 minutes."
+
+        - alert: EshopHPAMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="eshop"}
+            == kube_horizontalpodautoscaler_spec_max_replicas{namespace="eshop"}
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "HPA {{ $labels.horizontalpodautoscaler }} is at maximum replicas"
+
+    - name: eshop-infrastructure
+      interval: 30s
+      rules:
+        - alert: RabbitMQHighQueueDepth
+          expr: rabbitmq_queue_messages{namespace="eshop"} > 1000
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "RabbitMQ queue {{ $labels.queue }} has high message depth"
+
+        - alert: RedisHighMemoryUsage
+          expr: (redis_memory_used_bytes{namespace="eshop"} / redis_memory_max_bytes{namespace="eshop"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Redis memory usage above 80%"
+
+        - alert: PostgreSQLHighConnections
+          expr: |
+            (sum by (instance) (pg_stat_activity_count{namespace="eshop"})
+            / pg_settings_max_connections{namespace="eshop"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "PostgreSQL connection usage above 80%"
+
+        - alert: RabbitMQDown
+          expr: rabbitmq_up{namespace="eshop"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "RabbitMQ node is down"
+
+        - alert: RedisDown
+          expr: redis_up{namespace="eshop"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Redis instance is down"
+
+        - alert: PostgreSQLDown
+          expr: pg_up{namespace="eshop"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "PostgreSQL instance is down"
+
+    - name: eshop-slos
+      interval: 30s
+      rules:
+        - alert: EshopHighLatencyP99
+          expr: |
+            histogram_quantile(0.99,
+              sum by (job, le) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*"}[5m]))
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "High P99 latency for {{ $labels.job }}"
+            description: "Service {{ $labels.job }} has P99 latency of {{ printf \"%.2f\" $value }}s."
+
+        - alert: EshopSLOAvailabilityBreach
+          expr: |
+            (sum by (job) (increase(http_requests_total{job=~"eshop-.*", status!~"5.."}[24h]))
+            / sum by (job) (increase(http_requests_total{job=~"eshop-.*"}[24h]))) < 0.999
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "SLO availability breach for {{ $labels.job }}"

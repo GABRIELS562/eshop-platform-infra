@@ -1,0 +1,113 @@
+---
+# eShop Platform Ingress Configuration
+# Routes traffic to API Gateway and Web SPA
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eshop-web
+  namespace: eshop
+  labels:
+    app.kubernetes.io/name: eshop-web
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: eshop-platform
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: eshop.jagdevops.co.za
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-spa
+                port:
+                  number: 80
+    - host: eshop-local.jagdevops.co.za
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-spa
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eshop-api
+  namespace: eshop
+  labels:
+    app.kubernetes.io/name: eshop-api
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: eshop-platform
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: api.eshop.jagdevops.co.za
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eshop-identity
+  namespace: eshop
+  labels:
+    app.kubernetes.io/name: eshop-identity
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: eshop-platform
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: identity.eshop.jagdevops.co.za
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: identity-api
+                port:
+                  number: 80
+---
+# Seq log viewer ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eshop-seq
+  namespace: eshop
+  labels:
+    app.kubernetes.io/name: eshop-seq
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: eshop-platform
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: logs.eshop.jagdevops.co.za
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: seq
+                port:
+                  number: 80

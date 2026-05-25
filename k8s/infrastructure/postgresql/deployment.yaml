@@ -82,23 +82,19 @@ spec:
           livenessProbe:
             exec:
               command:
-                - pg_isready
-                - -U
-                - $(POSTGRES_USER)
-                - -d
-                - $(POSTGRES_DB)
+                - /bin/sh
+                - -c
+                - pg_isready -U eshop -d eshop
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 6
           readinessProbe:
             exec:
               command:
-                - pg_isready
-                - -U
-                - $(POSTGRES_USER)
-                - -d
-                - $(POSTGRES_DB)
+                - /bin/sh
+                - -c
+                - pg_isready -U eshop -d eshop
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -150,13 +146,9 @@ metadata:
     version: "16"
 type: Opaque
 stringData:
-  # [placeholder] - Replace with secure credentials before deployment
-  # Generate secure values:
-  #   password: openssl rand -base64 32
   username: "eshop"
-  password: "[placeholder]-replace-with-secure-password"
-  # Connection strings for applications
-  connection-string: "Host=postgresql;Port=5432;Database=eshop;Username=eshop;Password=[placeholder]-replace-with-secure-password"
-  catalog-connection-string: "Host=postgresql;Port=5432;Database=catalog_db;Username=eshop;Password=[placeholder]-replace-with-secure-password"
-  identity-connection-string: "Host=postgresql;Port=5432;Database=identity_db;Username=eshop;Password=[placeholder]-replace-with-secure-password"
-  ordering-connection-string: "Host=postgresql;Port=5432;Database=ordering_db;Username=eshop;Password=[placeholder]-replace-with-secure-password"
+  password: "eshop-postgres-2026"
+  connection-string: "Host=postgresql;Port=5432;Database=eshop;Username=eshop;Password=eshop-postgres-2026"
+  catalog-connection-string: "Host=postgresql;Port=5432;Database=catalog_db;Username=eshop;Password=eshop-postgres-2026"
+  identity-connection-string: "Host=postgresql;Port=5432;Database=identity_db;Username=eshop;Password=eshop-postgres-2026"
+  ordering-connection-string: "Host=postgresql;Port=5432;Database=ordering_db;Username=eshop;Password=eshop-postgres-2026"

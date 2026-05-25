@@ -7,6 +7,7 @@ image:
   repository: ghcr.io/gabriels562/ordering-signalr
   tag: "d35f7eb"
   tag: "0db7625"
+  tag: "639b5bb"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:

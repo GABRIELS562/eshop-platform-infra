@@ -7,6 +7,7 @@ image:
   repository: ghcr.io/gabriels562/identity-api
   tag: "9dd4480"
   tag: "9dd4480"
+  tag: "639b5bb"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:

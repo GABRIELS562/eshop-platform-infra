@@ -28,9 +28,6 @@ data:
     log.console.level = info
     log.file = false
 
-    ## Management plugin settings
-    management.load_definitions = /etc/rabbitmq/definitions.json
-
     ## Consumer timeout (30 minutes)
     consumer_timeout = 1800000
 
@@ -40,17 +37,27 @@ data:
     ## Heartbeat timeout
     heartbeat = 60
 
-    ## Message acknowledgment timeout (30 minutes)
-    # This prevents stuck consumers
-    consumer_timeout = 1800000
-
   definitions.json: |
     {
       "vhosts": [
         {"name": "/"},
         {"name": "eshop"}
       ],
+      "users": [
+        {
+          "name": "eshop",
+          "password_hash": "eshop-rabbitmq-2026",
+          "tags": "administrator"
+        }
+      ],
       "permissions": [
+        {
+          "user": "eshop",
+          "vhost": "/",
+          "configure": ".*",
+          "write": ".*",
+          "read": ".*"
+        },
         {
           "user": "eshop",
           "vhost": "eshop",
@@ -81,36 +88,28 @@ data:
           "vhost": "eshop",
           "durable": true,
           "auto_delete": false,
-          "arguments": {
-            "x-queue-type": "quorum"
-          }
+          "arguments": {}
         },
         {
           "name": "ordering.events",
           "vhost": "eshop",
           "durable": true,
           "auto_delete": false,
-          "arguments": {
-            "x-queue-type": "quorum"
-          }
+          "arguments": {}
         },
         {
           "name": "basket.events",
           "vhost": "eshop",
           "durable": true,
           "auto_delete": false,
-          "arguments": {
-            "x-queue-type": "quorum"
-          }
+          "arguments": {}
         },
         {
           "name": "identity.events",
           "vhost": "eshop",
           "durable": true,
           "auto_delete": false,
-          "arguments": {
-            "x-queue-type": "quorum"
-          }
+          "arguments": {}
         }
       ],
       "bindings": [

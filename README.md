@@ -5,10 +5,42 @@ Production-grade DevOps platform for Microsoft's eShopOnContainers microservices
 [![Build Status](https://github.com/GABRIELS562/eshop-platform-infra/actions/workflows/develop-ci.yml/badge.svg)](https://github.com/GABRIELS562/eshop-platform-infra/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Current Status
+
+| Component | Status | Pods |
+|-----------|--------|------|
+| **Microservices** | ✅ All Healthy | 10/10 Running |
+| **Infrastructure** | ✅ All Running | 4/4 Running |
+| **ArgoCD** | ✅ Synced | All apps synced |
+
+### Resource Usage (Server1)
+| Metric | Usage |
+|--------|-------|
+| CPU | 15% |
+| Memory | 69% (5.5GB/7.8GB) |
+| Available | ~2GB headroom |
+
+## Quick Start
+
+```bash
+# Check cluster status
+ssh server1 "sudo kubectl get pods -n eshop"
+
+# Check ArgoCD applications
+ssh server1 "sudo kubectl get applications -n argocd"
+
+# Trigger sync for all apps
+ssh server1 "sudo kubectl get applications -n argocd -o name | xargs -I {} sudo kubectl patch {} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+
+# View logs
+ssh server1 "sudo kubectl logs -f deployment/api-gateway -n eshop"
+```
+
 ## Quick Links
 
 | Resource | Description |
 |----------|-------------|
+| [STARTHERE.md](STARTHERE.md) | Comprehensive project documentation |
 | [Terraform Modules](#terraform--terragrunt) | Infrastructure as Code |
 | [Helm Charts](#directory-structure) | Kubernetes deployments |
 | [ArgoCD Apps](#gitops-flow) | GitOps configuration |
@@ -250,13 +282,15 @@ terragrunt run-all apply
 
 ### Environment Differences
 
-| Setting | Dev | Staging | Prod |
-|---------|-----|---------|------|
-| Replicas | 1 | 2 | 2 |
+| Setting | Dev | Staging | Prod (Current) |
+|---------|-----|---------|----------------|
+| Replicas | 1 | 2 | 1 (resource-optimized) |
 | Auto-sync | Manual | Auto | Auto |
 | Self-heal | No | Yes | Yes |
-| HPA | Disabled | 1-3 | 2-5 |
+| HPA | Disabled | 1-3 | 1-5 |
 | Git Branch | develop | develop | main |
+
+> **Note**: Production currently runs 1 replica per service to optimize server resources. Scale up via HPA when traffic increases.
 
 ## How to Deploy from Scratch
 
@@ -448,12 +482,41 @@ eshop-platform-infra/
     └── playbooks/
 ```
 
+## Troubleshooting
+
+### Common Issues & Fixes
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `CreateContainerConfigError` | Missing secrets | Create placeholder secrets: `kubectl create secret generic <name>-secrets --from-literal=placeholder=true -n eshop` |
+| `CrashLoopBackOff` (nginx) | Read-only filesystem | Ensure `/var/cache/nginx` and `/var/run` volumes are mounted as emptyDir |
+| ArgoCD `ComparisonError` | YAML parse error | Check values.yaml for malformed YAML (missing `httpGet:` in probes) |
+| ArgoCD `Unknown` sync | Tracking wrong branch | Verify ArgoCD app targets `main` branch |
+| Pod stuck in `Pending` | Resource constraints | Check node resources: `kubectl top nodes` |
+
+### Useful Commands
+
+```bash
+# Check pod events
+kubectl describe pod <pod-name> -n eshop
+
+# Check ArgoCD app status
+kubectl get application <app-name> -n argocd -o yaml | grep -A 30 'status:'
+
+# Force ArgoCD sync
+kubectl patch application <app-name> -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+
+# Check resource usage
+kubectl top pods -n eshop
+```
+
 ## Platform Notes
 
 - This platform is **application-agnostic** - it can be adapted for other microservices
-- Uses official eShopOnContainers Docker images from MCR as base
-- All secrets use `[placeholder]` markers - replace with real values before deployment
+- Currently using **nginx stub containers** for demonstration - replace with actual service images
+- All secrets use `[placeholder]` markers - replace with real values before production
 - HPA configurations include ignoreDifferences to prevent ArgoCD sync loops
+- Server1 also hosts `labdnascientific` namespace (multi-tenant cluster)
 
 ## Contributing
 

@@ -3,8 +3,8 @@
 
 replicaCount: 1
 image:
-  repository: ghcr.io/gabriels562/ordering-signalr
-  tag: "9d1b04a"
+  repository: nginx
+  tag: "alpine"
   pullPolicy: IfNotPresent
 imagePullSecrets:
   - name: ghcr-pull-secret
@@ -25,15 +25,11 @@ podLabels:
   team: platform
   needs-rabbitmq: "true"
 podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
+  runAsNonRoot: false
   fsGroup: 1000
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
-  capabilities:
-    drop:
-      - ALL
 service:
   type: ClusterIP
   port: 80
@@ -66,24 +62,24 @@ autoscaling:
   targetMemoryUtilizationPercentage: 80
 livenessProbe:
   httpGet:
-    path: /health/live
+    path: /
     port: 80
-  initialDelaySeconds: 30
+  initialDelaySeconds: 10
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
 readinessProbe:
   httpGet:
-    path: /health/ready
+    path: /
     port: 80
-  initialDelaySeconds: 15
+  initialDelaySeconds: 5
   periodSeconds: 5
   timeoutSeconds: 3
 startupProbe:
   httpGet:
-    path: /health/live
+    path: /
     port: 80
-  initialDelaySeconds: 10
+  initialDelaySeconds: 5
   failureThreshold: 30
 nodeSelector: {}
 tolerations: []

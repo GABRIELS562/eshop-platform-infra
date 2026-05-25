@@ -4,7 +4,7 @@
 replicaCount: 1
 image:
   repository: ghcr.io/gabriels562/catalog-api
-  tag: "9d1b04a"
+  tag: "10a9632"
   pullPolicy: IfNotPresent
 imagePullSecrets:
   - name: ghcr-pull-secret

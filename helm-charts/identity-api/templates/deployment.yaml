@@ -69,6 +69,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
             {{- if .Values.configMap.enabled }}
             - name: config
               mountPath: /app/config
@@ -76,6 +80,10 @@ spec:
             {{- end }}
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
           emptyDir: {}
         {{- if .Values.configMap.enabled }}
         - name: config

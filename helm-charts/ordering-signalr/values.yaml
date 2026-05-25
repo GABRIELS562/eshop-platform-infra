@@ -4,7 +4,7 @@
 replicaCount: 1
 image:
   repository: ghcr.io/gabriels562/ordering-signalr
-  tag: "7e49d5f"
+  tag: "9d1b04a"
   pullPolicy: IfNotPresent
 imagePullSecrets:
   - name: ghcr-pull-secret

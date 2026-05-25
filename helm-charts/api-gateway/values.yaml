@@ -5,10 +5,11 @@ replicaCount: 2
 
 image:
   repository: ghcr.io/gabriels562/api-gateway
-  tag: "d35f7eb"
+  tag: "0db7625"
   pullPolicy: IfNotPresent
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: ""
 

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "paymentservice.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "paymentservice.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "paymentservice.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,21 @@
+apiVersion: v2
+name: checkoutservice
+description: Online Boutique Checkout Service - Checkout orchestration and order processing
+type: application
+version: 1.0.0
+appVersion: "0.10.5"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - online-boutique
+  - checkout
+  - orders
+  - grpc
+  - microservice
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/GoogleCloudPlatform/microservices-demo
+dependencies: []
+annotations:
+  category: Backend Service

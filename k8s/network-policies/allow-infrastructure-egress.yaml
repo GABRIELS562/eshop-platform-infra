@@ -1,5 +1,5 @@
 ---
-# Allow egress to PostgreSQL
+# Allow egress to PostgreSQL (kept for infrastructure showcase)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -25,7 +25,59 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# Allow egress to Redis
+# Allow cartservice egress to redis-cart
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cartservice-to-redis
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: infrastructure
+spec:
+  podSelector:
+    matchLabels:
+      app: cartservice
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-cart
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# Allow redis-cart to receive traffic from cartservice
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-cart-ingress
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: infrastructure
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-cart
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: cartservice
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# Allow egress to Redis (kept for infrastructure showcase)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -51,7 +103,7 @@ spec:
         - protocol: TCP
           port: 6379
 ---
-# Allow egress to RabbitMQ
+# Allow egress to RabbitMQ (kept for infrastructure showcase)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

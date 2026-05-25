@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-cart
+  namespace: argocd
+  labels:
+    app: redis-cart
+    env: production
+    team: platform
+    component: infrastructure
+spec:
+  project: eshop
+  source:
+    repoURL: https://github.com/GABRIELS562/eshop-platform-infra
+    targetRevision: main
+    path: helm-charts/redis-cart
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eshop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

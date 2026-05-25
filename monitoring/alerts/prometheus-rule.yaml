@@ -14,7 +14,7 @@ spec:
       interval: 30s
       rules:
         - alert: EshopServiceDown
-          expr: up{job=~"eshop-.*"} == 0
+          expr: up{namespace="eshop"} == 0
           for: 2m
           labels:
             severity: critical
@@ -26,17 +26,17 @@ spec:
         - alert: EshopHighErrorRate
           expr: |
             (
-              sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*", status=~"5.."}[5m]))
+              sum by (app, namespace) (rate(http_requests_total{namespace="eshop", status=~"5.."}[5m]))
               /
-              sum by (job, namespace) (rate(http_requests_total{job=~"eshop-.*"}[5m]))
+              sum by (app, namespace) (rate(http_requests_total{namespace="eshop"}[5m]))
             ) * 100 > 5
           for: 5m
           labels:
             severity: critical
             team: platform
           annotations:
-            summary: "High HTTP 5xx error rate for {{ $labels.job }}"
-            description: "Service {{ $labels.job }} has {{ printf \"%.2f\" $value }}% HTTP 5xx errors."
+            summary: "High HTTP 5xx error rate for {{ $labels.app }}"
+            description: "Service {{ $labels.app }} has {{ printf \"%.2f\" $value }}% HTTP 5xx errors."
 
         - alert: EshopPodRestartLoop
           expr: increase(kube_pod_container_status_restarts_total{namespace="eshop"}[5m]) > 3
@@ -59,6 +59,36 @@ spec:
           annotations:
             summary: "HPA {{ $labels.horizontalpodautoscaler }} is at maximum replicas"
 
+        - alert: EshopFrontendDown
+          expr: up{namespace="eshop", app="frontend"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Online Boutique Frontend is down"
+            description: "The frontend service has been down for more than 1 minute."
+
+        - alert: EshopCheckoutServiceDown
+          expr: up{namespace="eshop", app="checkoutservice"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Checkout service is down"
+            description: "The checkout service has been down for more than 1 minute. Orders cannot be processed."
+
+        - alert: EshopCartServiceDown
+          expr: up{namespace="eshop", app="cartservice"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Cart service is down"
+            description: "The cart service has been down for more than 1 minute. Shopping carts are unavailable."
+
     - name: eshop-infrastructure
       interval: 30s
       rules:
@@ -79,6 +109,16 @@ spec:
             team: platform
           annotations:
             summary: "Redis memory usage above 80%"
+
+        - alert: RedisCartDown
+          expr: up{namespace="eshop", app="redis-cart"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Redis Cart is down"
+            description: "Redis cart storage has been down for more than 1 minute. Shopping carts will fail."
 
         - alert: PostgreSQLHighConnections
           expr: |
@@ -124,23 +164,36 @@ spec:
         - alert: EshopHighLatencyP99
           expr: |
             histogram_quantile(0.99,
-              sum by (job, le) (rate(http_request_duration_seconds_bucket{job=~"eshop-.*"}[5m]))
+              sum by (app, le) (rate(http_request_duration_seconds_bucket{namespace="eshop"}[5m]))
             ) > 1
           for: 5m
           labels:
             severity: warning
             team: platform
           annotations:
-            summary: "High P99 latency for {{ $labels.job }}"
-            description: "Service {{ $labels.job }} has P99 latency of {{ printf \"%.2f\" $value }}s."
+            summary: "High P99 latency for {{ $labels.app }}"
+            description: "Service {{ $labels.app }} has P99 latency of {{ printf \"%.2f\" $value }}s."
 
-        - alert: EshopSLOAvailabilityBreach
+        - alert: EshopHighGRPCLatency
           expr: |
-            (sum by (job) (increase(http_requests_total{job=~"eshop-.*", status!~"5.."}[24h]))
-            / sum by (job) (increase(http_requests_total{job=~"eshop-.*"}[24h]))) < 0.999
+            histogram_quantile(0.99,
+              sum by (app, le) (rate(grpc_server_handling_seconds_bucket{namespace="eshop"}[5m]))
+            ) > 0.5
           for: 5m
           labels:
             severity: warning
             team: platform
           annotations:
-            summary: "SLO availability breach for {{ $labels.job }}"
+            summary: "High gRPC P99 latency for {{ $labels.app }}"
+            description: "Service {{ $labels.app }} has gRPC P99 latency of {{ printf \"%.2f\" $value }}s."
+
+        - alert: EshopSLOAvailabilityBreach
+          expr: |
+            (sum by (app) (increase(http_requests_total{namespace="eshop", status!~"5.."}[24h]))
+            / sum by (app) (increase(http_requests_total{namespace="eshop"}[24h]))) < 0.999
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "SLO availability breach for {{ $labels.app }}"

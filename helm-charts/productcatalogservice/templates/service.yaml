@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "productcatalogservice.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "productcatalogservice.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "productcatalogservice.selectorLabels" . | nindent 4 }}

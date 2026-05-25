@@ -1,0 +1,21 @@
+apiVersion: v2
+name: productcatalogservice
+description: Online Boutique Product Catalog Service - Product information and search
+type: application
+version: 1.0.0
+appVersion: "0.10.5"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - online-boutique
+  - catalog
+  - products
+  - grpc
+  - microservice
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/GoogleCloudPlatform/microservices-demo
+dependencies: []
+annotations:
+  category: Backend Service

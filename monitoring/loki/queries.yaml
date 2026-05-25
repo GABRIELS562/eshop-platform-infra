@@ -1,4 +1,4 @@
-# Loki Log Queries for eShop Platform
+# Loki Log Queries for Online Boutique Platform
 # Use these queries in Grafana Explore or dashboards
 
 queries:
@@ -7,20 +7,35 @@ queries:
     query: '{namespace="eshop"} |= "error" | json'
     description: "All error logs from eshop namespace"
 
-  - name: "Error Logs - Basket API"
-    query: '{namespace="eshop", app="basket-api"} |= "error" | json'
+  - name: "Error Logs - Frontend"
+    query: '{namespace="eshop", app="frontend"} |= "error" | json'
 
-  - name: "Error Logs - Catalog API"
-    query: '{namespace="eshop", app="catalog-api"} |= "error" | json'
+  - name: "Error Logs - Checkout Service"
+    query: '{namespace="eshop", app="checkoutservice"} |= "error" | json'
 
-  - name: "Error Logs - Ordering API"
-    query: '{namespace="eshop", app="ordering-api"} |= "error" | json'
+  - name: "Error Logs - Cart Service"
+    query: '{namespace="eshop", app="cartservice"} |= "error" | json'
 
-  - name: "Error Logs - Identity API"
-    query: '{namespace="eshop", app="identity-api"} |= "error" | json'
+  - name: "Error Logs - Product Catalog"
+    query: '{namespace="eshop", app="productcatalogservice"} |= "error" | json'
 
-  - name: "Error Logs - Payment API"
-    query: '{namespace="eshop", app="payment-api"} |= "error" | json'
+  - name: "Error Logs - Payment Service"
+    query: '{namespace="eshop", app="paymentservice"} |= "error" | json'
+
+  - name: "Error Logs - Shipping Service"
+    query: '{namespace="eshop", app="shippingservice"} |= "error" | json'
+
+  - name: "Error Logs - Currency Service"
+    query: '{namespace="eshop", app="currencyservice"} |= "error" | json'
+
+  - name: "Error Logs - Email Service"
+    query: '{namespace="eshop", app="emailservice"} |= "error" | json'
+
+  - name: "Error Logs - Recommendation Service"
+    query: '{namespace="eshop", app="recommendationservice"} |= "error" | json'
+
+  - name: "Error Logs - Ad Service"
+    query: '{namespace="eshop", app="adservice"} |= "error" | json'
 
   # Slow request logs (> 1 second)
   - name: "Slow Requests - All Services"
@@ -30,58 +45,55 @@ queries:
       | duration > 1s
     description: "Requests taking longer than 1 second"
 
-  - name: "Slow Requests - Detailed"
+  - name: "Slow Requests - Frontend"
     query: |
-      {namespace="eshop"}
+      {namespace="eshop", app="frontend"}
       | json
       | __error__=""
       | elapsed_ms > 1000
-      | line_format "{{.app}} - {{.method}} {{.path}} - {{.elapsed_ms}}ms"
+      | line_format "{{.method}} {{.path}} - {{.elapsed_ms}}ms"
 
-  # Authentication failures
-  - name: "Authentication Failures"
-    query: |
-      {namespace="eshop", app="identity-api"}
-      |~ "(?i)(authentication failed|invalid credentials|unauthorized|401)"
-    description: "Failed authentication attempts"
-
-  - name: "Login Attempts"
-    query: |
-      {namespace="eshop", app="identity-api"}
-      |~ "(?i)(login|signin|authenticate)"
-      | json
-
-  # RabbitMQ consumer errors
-  - name: "RabbitMQ Consumer Errors"
+  # gRPC errors
+  - name: "gRPC Errors"
     query: |
       {namespace="eshop"}
-      |~ "(?i)(rabbitmq|eventbus|message.*failed|consumer.*error)"
-    description: "RabbitMQ and EventBus related errors"
+      |~ "(?i)(grpc.*error|rpc.*failed|status.*unavailable)"
+    description: "gRPC communication errors"
 
-  - name: "Message Processing Failures"
+  - name: "gRPC Connection Issues"
     query: |
       {namespace="eshop"}
-      |~ "(?i)(message.*processing.*failed|integration.*event.*error)"
+      |~ "(?i)(connection.*refused|dial.*error|transport.*closing)"
 
-  # Database connection errors
-  - name: "Database Connection Errors"
+  # Checkout flow errors
+  - name: "Checkout Errors"
     query: |
-      {namespace="eshop"}
-      |~ "(?i)(database|connection.*refused|timeout.*expired|postgresql|npgsql)"
-      |~ "(?i)(error|failed|exception)"
-    description: "PostgreSQL connection issues"
+      {namespace="eshop", app="checkoutservice"}
+      |~ "(?i)(failed|error|exception)"
+    description: "Errors during checkout process"
 
+  - name: "Payment Processing Errors"
+    query: |
+      {namespace="eshop", app="paymentservice"}
+      |~ "(?i)(charge.*failed|payment.*error|invalid.*card)"
+
+  # Cart operations
+  - name: "Cart Service Errors"
+    query: |
+      {namespace="eshop", app="cartservice"}
+      |~ "(?i)(redis|cache|cart.*error)"
+
+  # Redis connection errors
   - name: "Redis Connection Errors"
     query: |
       {namespace="eshop"}
-      |~ "(?i)(redis|stackexchange.*redis)"
-      |~ "(?i)(error|failed|connection)"
+      |~ "(?i)(redis.*error|redis.*connection|redis.*timeout)"
 
   # Service startup and health
   - name: "Service Startup Events"
     query: |
       {namespace="eshop"}
-      |~ "(?i)(started|listening|ready|initialized)"
+      |~ "(?i)(started|listening|ready|initialized|serving)"
 
   - name: "Health Check Failures"
     query: |
@@ -92,7 +104,7 @@ queries:
   - name: "Unhandled Exceptions"
     query: |
       {namespace="eshop"}
-      |~ "(?i)(unhandled.*exception|stack.*trace|fatal)"
+      |~ "(?i)(unhandled.*exception|stack.*trace|fatal|panic)"
 
   - name: "HTTP 5xx Responses"
     query: |
@@ -100,11 +112,16 @@ queries:
       | json
       | status_code >= 500
 
-  # Rate limiting and throttling
-  - name: "Rate Limit Events"
+  # Load generator logs
+  - name: "Load Generator Activity"
     query: |
-      {namespace="eshop"}
-      |~ "(?i)(rate.*limit|throttl|429)"
+      {namespace="eshop", app="loadgenerator"}
+    description: "Traffic generator activity logs"
+
+  - name: "Load Generator Errors"
+    query: |
+      {namespace="eshop", app="loadgenerator"}
+      |~ "(?i)(error|failed|timeout)"
 
 # Dashboard panel configurations
 dashboard_panels:
@@ -122,10 +139,18 @@ dashboard_panels:
         count_over_time({namespace="eshop"} [1m])
       )
 
-  - title: "Authentication Events"
+  - title: "gRPC Error Rate"
     type: "stat"
     query: |
       count_over_time(
-        {namespace="eshop", app="identity-api"}
-        |~ "(?i)authentication" [24h]
+        {namespace="eshop"}
+        |~ "(?i)grpc.*error" [1h]
+      )
+
+  - title: "Checkout Success Rate"
+    type: "stat"
+    query: |
+      count_over_time(
+        {namespace="eshop", app="checkoutservice"}
+        |~ "order.*placed" [24h]
       )

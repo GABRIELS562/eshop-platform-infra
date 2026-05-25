@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loadgenerator
+  namespace: argocd
+  labels:
+    app: loadgenerator
+    env: production
+    team: platform
+    component: testing
+spec:
+  project: eshop
+  source:
+    repoURL: https://github.com/GABRIELS562/eshop-platform-infra
+    targetRevision: main
+    path: helm-charts/loadgenerator
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eshop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

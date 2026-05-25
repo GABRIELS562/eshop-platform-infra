@@ -1,6 +1,6 @@
 ---
-# Allow backend services to communicate with each other
-# This enables service-to-service communication within the eshop platform
+# Allow backend services to communicate with each other via gRPC
+# This enables service-to-service communication within the Online Boutique platform
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -23,11 +23,25 @@ spec:
         - podSelector:
             matchLabels:
               tier: backend
+        - podSelector:
+            matchLabels:
+              tier: frontend
       ports:
+        # gRPC ports for Online Boutique services
         - protocol: TCP
-          port: 80
+          port: 3550   # productcatalogservice
         - protocol: TCP
-          port: 443
+          port: 5050   # checkoutservice
+        - protocol: TCP
+          port: 7000   # currencyservice
+        - protocol: TCP
+          port: 7070   # cartservice
+        - protocol: TCP
+          port: 8080   # emailservice, recommendationservice
+        - protocol: TCP
+          port: 9555   # adservice
+        - protocol: TCP
+          port: 50051  # paymentservice, shippingservice
   egress:
     - to:
         - podSelector:
@@ -35,15 +49,25 @@ spec:
               tier: backend
       ports:
         - protocol: TCP
-          port: 80
+          port: 3550
         - protocol: TCP
-          port: 443
+          port: 5050
+        - protocol: TCP
+          port: 7000
+        - protocol: TCP
+          port: 7070
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9555
+        - protocol: TCP
+          port: 50051
 ---
-# Allow Identity API to be accessible by all services (authentication)
+# Allow frontend to communicate with all backend services
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-identity-api-access
+  name: allow-frontend-to-backends
   namespace: eshop
   labels:
     app: eshop
@@ -53,23 +77,35 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: identity-api
+      app: frontend
   policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector: {}
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: backend
       ports:
         - protocol: TCP
-          port: 80
+          port: 3550   # productcatalogservice
         - protocol: TCP
-          port: 443
+          port: 5050   # checkoutservice
+        - protocol: TCP
+          port: 7000   # currencyservice
+        - protocol: TCP
+          port: 7070   # cartservice
+        - protocol: TCP
+          port: 8080   # recommendationservice
+        - protocol: TCP
+          port: 9555   # adservice
+        - protocol: TCP
+          port: 50051  # shippingservice
 ---
-# Allow SignalR hub connections
+# Allow checkoutservice to communicate with all required services
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-signalr-connections
+  name: allow-checkoutservice-egress
   namespace: eshop
   labels:
     app: eshop
@@ -79,12 +115,75 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: ordering-signalr
+      app: checkoutservice
   policyTypes:
-    - Ingress
-  ingress:
-    - ports:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cartservice
+      ports:
         - protocol: TCP
-          port: 80
+          port: 7070
+    - to:
+        - podSelector:
+            matchLabels:
+              app: productcatalogservice
+      ports:
         - protocol: TCP
-          port: 443
+          port: 3550
+    - to:
+        - podSelector:
+            matchLabels:
+              app: shippingservice
+      ports:
+        - protocol: TCP
+          port: 50051
+    - to:
+        - podSelector:
+            matchLabels:
+              app: paymentservice
+      ports:
+        - protocol: TCP
+          port: 50051
+    - to:
+        - podSelector:
+            matchLabels:
+              app: emailservice
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: currencyservice
+      ports:
+        - protocol: TCP
+          port: 7000
+---
+# Allow recommendationservice to communicate with productcatalogservice
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-recommendationservice-egress
+  namespace: eshop
+  labels:
+    app: eshop
+    env: production
+    team: platform
+    policy-type: application
+spec:
+  podSelector:
+    matchLabels:
+      app: recommendationservice
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: productcatalogservice
+      ports:
+        - protocol: TCP
+          port: 3550

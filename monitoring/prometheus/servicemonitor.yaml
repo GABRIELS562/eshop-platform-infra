@@ -1,5 +1,5 @@
 ---
-# ServiceMonitor for scraping eShop services metrics
+# ServiceMonitor for scraping Online Boutique services metrics
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -23,8 +23,37 @@ spec:
       interval: 30s
       scrapeTimeout: 10s
       honorLabels: true
+    - port: grpc
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
 ---
-# ServiceMonitor for RabbitMQ
+# ServiceMonitor for frontend (HTTP metrics)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      app: frontend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for RabbitMQ (kept for infrastructure)
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -47,7 +76,7 @@ spec:
       path: /metrics
       interval: 30s
 ---
-# ServiceMonitor for Redis
+# ServiceMonitor for Redis (kept for infrastructure)
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -70,7 +99,30 @@ spec:
       path: /metrics
       interval: 30s
 ---
-# ServiceMonitor for PostgreSQL
+# ServiceMonitor for redis-cart
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eshop-redis-cart
+  namespace: monitoring
+  labels:
+    app: redis-cart
+    env: production
+    team: platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - eshop
+  selector:
+    matchLabels:
+      app: redis-cart
+  endpoints:
+    - port: redis
+      path: /metrics
+      interval: 30s
+---
+# ServiceMonitor for PostgreSQL (kept for infrastructure)
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -93,7 +145,7 @@ spec:
       path: /metrics
       interval: 30s
 ---
-# PodMonitor for pods without services
+# PodMonitor for pods without services (e.g., loadgenerator)
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -112,5 +164,8 @@ spec:
       env: production
   podMetricsEndpoints:
     - port: http
+      path: /metrics
+      interval: 30s
+    - port: grpc
       path: /metrics
       interval: 30s

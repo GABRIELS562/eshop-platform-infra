@@ -1,0 +1,46 @@
+# Default values for loadgenerator
+# This is a YAML-formatted file.
+
+replicaCount: 1
+image:
+  repository: gcr.io/google-samples/microservices-demo/loadgenerator
+  tag: "v0.10.5"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: true
+  name: loadgenerator-sa
+  annotations: {}
+podAnnotations: {}
+podLabels:
+  app: loadgenerator
+  tier: testing
+  env: production
+  team: platform
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env:
+  - name: FRONTEND_ADDR
+    value: "frontend.eshop.svc.cluster.local:80"
+  - name: USERS
+    value: "10"

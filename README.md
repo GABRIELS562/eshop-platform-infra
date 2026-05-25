@@ -1,6 +1,6 @@
 # eShop Platform Infrastructure
 
-Production-grade DevOps platform for Microsoft's eShopOnContainers microservices application, deployed on K3s.
+Production-grade DevOps platform running Google's Online Boutique microservices demo, deployed on K3s with GitOps.
 
 [![Build Status](https://github.com/GABRIELS562/eshop-platform-infra/actions/workflows/develop-ci.yml/badge.svg)](https://github.com/GABRIELS562/eshop-platform-infra/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,7 +9,7 @@ Production-grade DevOps platform for Microsoft's eShopOnContainers microservices
 
 | Component | Status | Pods |
 |-----------|--------|------|
-| **Microservices** | ✅ All Healthy | 10/10 Running |
+| **Online Boutique** | ✅ All Healthy | 12/12 Running |
 | **Infrastructure** | ✅ All Running | 4/4 Running |
 | **ArgoCD** | ✅ Synced | All apps synced |
 
@@ -32,8 +32,11 @@ ssh server1 "sudo kubectl get applications -n argocd"
 # Trigger sync for all apps
 ssh server1 "sudo kubectl get applications -n argocd -o name | xargs -I {} sudo kubectl patch {} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
 
-# View logs
-ssh server1 "sudo kubectl logs -f deployment/api-gateway -n eshop"
+# View frontend logs
+ssh server1 "sudo kubectl logs -f deployment/frontend -n eshop"
+
+# Port-forward to access frontend
+ssh server1 "sudo kubectl port-forward svc/frontend -n eshop 8080:80"
 ```
 
 ## Quick Links
@@ -57,29 +60,29 @@ graph TB
 
     subgraph "Server1 - K3s Cluster (100.89.26.128)"
         subgraph "eshop namespace"
-            GW[API Gateway]
+            FE[Frontend :8080]
 
-            subgraph "Frontend"
-                SPA[Web SPA]
-            end
-
-            subgraph "Backend Services"
-                BA[Basket API]
-                CA[Catalog API]
-                OA[Ordering API]
-                IA[Identity API]
-                PA[Payment API]
-                WA[Webhook API]
-                MB[Mobile BFF]
-                OS[Ordering SignalR]
+            subgraph "Backend Services - gRPC"
+                CART[Cart Service :7070]
+                PROD[Product Catalog :3550]
+                CURR[Currency Service :7000]
+                PAY[Payment Service :50051]
+                SHIP[Shipping Service :50051]
+                EMAIL[Email Service :8080]
+                CHECK[Checkout Service :5050]
+                REC[Recommendation :8080]
+                AD[Ad Service :9555]
             end
 
             subgraph "Infrastructure"
+                RCART[Redis Cart :6379]
                 RMQ[RabbitMQ]
                 RDS[Redis]
                 PG[PostgreSQL]
                 SEQ[Seq Logging]
             end
+
+            LG[Load Generator]
         end
 
         subgraph "argocd namespace"
@@ -98,20 +101,19 @@ graph TB
         LOKI[Loki]
     end
 
-    User --> GW
-    GW --> BA & CA & OA & IA & PA & WA & MB
-    GW --> SPA
+    User --> FE
+    LG --> FE
+    FE --> CART & PROD & CURR & CHECK & REC & AD & SHIP
 
-    BA --> RDS
-    BA & CA & OA & PA & WA & OS --> RMQ
-    CA & OA & IA --> PG
+    CHECK --> CART & PROD & SHIP & PAY & EMAIL & CURR
+    REC --> PROD
+    CART --> RCART
 
     GitHub --> ARGO
-    ARGO --> GW & BA & CA & OA & IA & PA & WA & SPA & MB & OS
+    ARGO --> FE & CART & PROD & CURR & PAY & SHIP & EMAIL & CHECK & REC & AD & RCART & LG
 
     ESO --> VLT
-    PROM --> BA & CA & OA & IA & PA & WA & SPA & MB & OS & GW & RMQ & RDS & PG
-    LOKI --> BA & CA & OA & IA & PA & WA & SPA & MB & OS & GW
+    PROM --> FE & CART & PROD & CURR & PAY & SHIP & EMAIL & CHECK & REC & AD
 ```
 
 ## Platform Overview
@@ -124,20 +126,33 @@ graph TB
 | **Secrets** | HashiCorp Vault with External Secrets Operator |
 | **CI/CD** | GitHub Actions with reusable workflows |
 
-## Services and Responsibilities
+## Online Boutique Services
 
-| Service | Port | Description | Dependencies |
-|---------|------|-------------|--------------|
-| **api-gateway** | 80 | Entry point, routing, rate limiting | - |
-| **web-spa** | 80 | Angular SPA frontend | API Gateway |
-| **basket-api** | 80 | Shopping cart management | Redis, RabbitMQ, Identity |
-| **catalog-api** | 80 | Product catalog CRUD | PostgreSQL, RabbitMQ |
-| **ordering-api** | 80 | Order processing (CQRS) | PostgreSQL, RabbitMQ, Identity |
-| **identity-api** | 80 | Authentication/Authorization | PostgreSQL |
-| **payment-api** | 80 | Payment processing | RabbitMQ |
-| **webhook-api** | 80 | Webhook subscriptions | RabbitMQ |
-| **mobile-bff** | 80 | Mobile backend aggregator | All APIs |
-| **ordering-signalr** | 80 | Real-time order updates | RabbitMQ |
+| Service | Port | Protocol | Description | Dependencies |
+|---------|------|----------|-------------|--------------|
+| **frontend** | 8080 | HTTP | Web UI for the store | All backend services |
+| **cartservice** | 7070 | gRPC | Shopping cart management | redis-cart |
+| **productcatalogservice** | 3550 | gRPC | Product information | None |
+| **currencyservice** | 7000 | gRPC | Currency conversion | None |
+| **paymentservice** | 50051 | gRPC | Payment processing | None |
+| **shippingservice** | 50051 | gRPC | Shipping quotes | None |
+| **emailservice** | 8080 | gRPC | Order confirmation emails | None |
+| **checkoutservice** | 5050 | gRPC | Checkout orchestration | cart, product, shipping, payment, email, currency |
+| **recommendationservice** | 8080 | gRPC | Product recommendations | productcatalog |
+| **adservice** | 9555 | gRPC | Advertisements | None |
+| **redis-cart** | 6379 | TCP | Cart storage | None |
+| **loadgenerator** | - | - | Traffic simulation | frontend |
+
+## Infrastructure (Portfolio Showcase)
+
+These services are kept deployed to demonstrate infrastructure management skills:
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **RabbitMQ** | 5672, 15672 | Message broker |
+| **Redis** | 6379 | Caching layer |
+| **PostgreSQL** | 5432 | Database |
+| **Seq** | 5341 | Structured logging |
 
 ## GitOps Flow
 
@@ -175,54 +190,17 @@ feature/*  →  develop  →  main (production)
     └── Feature development
 ```
 
-## Secrets Management
-
-```mermaid
-graph LR
-    subgraph "Vault (Server2)"
-        VS[secret/eshop/*]
-    end
-
-    subgraph "K3s Cluster"
-        ESO[External Secrets Operator]
-        CSS[ClusterSecretStore]
-        ES[ExternalSecrets]
-        KS[K8s Secrets]
-    end
-
-    subgraph "Pods"
-        POD[Application Pods]
-    end
-
-    VS --> CSS
-    CSS --> ESO
-    ESO --> ES
-    ES --> KS
-    KS --> POD
-```
-
-### Vault Secret Paths
-
-| Path | Contents |
-|------|----------|
-| `secret/eshop/global` | RABBITMQ_HOST, RABBITMQ_USER, RABBITMQ_PASS |
-| `secret/eshop/basket-api` | REDIS_CONNECTION, IDENTITY_URL |
-| `secret/eshop/catalog-api` | DB_CONNECTION |
-| `secret/eshop/ordering-api` | DB_CONNECTION, IDENTITY_URL |
-| `secret/eshop/identity-api` | DB_CONNECTION, CERTIFICATE_PASSWORD |
-| `secret/eshop/payment-api` | PAYMENT_GATEWAY_KEY |
-
 ## Observability
 
 ### Prometheus Alerts
 
 - Service down > 2 minutes
 - HTTP 5xx rate > 5%
+- gRPC P99 latency > 500ms
 - Pod restarts > 3 in 5 minutes
 - HPA at maximum replicas
-- RabbitMQ queue depth > 1000
-- Redis memory > 80%
-- PostgreSQL connections > 80%
+- Redis Cart down
+- Checkout service unavailable
 
 ### Grafana Dashboards
 
@@ -232,211 +210,22 @@ graph LR
 ### Loki Log Queries
 
 - Error logs per service
+- gRPC errors
 - Slow requests (>1s)
-- Authentication failures
-- Database connection errors
+- Checkout flow errors
+- Redis connection issues
 
-## Terraform & Terragrunt
-
-Infrastructure as Code using Terraform modules and Terragrunt for multi-environment management.
-
-### Terraform Modules
-
-| Module | Description |
-|--------|-------------|
-| `k3s-namespace` | Creates namespace with resource quotas and limit ranges |
-| `argocd-application` | Deploys ArgoCD Application resources |
-| `vault-secrets` | Manages Vault KV secrets and policies |
-| `network-policies` | Creates Kubernetes NetworkPolicies |
-
-### Environment Management with Terragrunt
-
-```
-terragrunt/
-├── terragrunt.hcl          # Root configuration
-├── dev/
-│   ├── env.hcl             # Dev-specific variables
-│   └── terragrunt.hcl      # Dev environment
-├── staging/
-│   ├── env.hcl             # Staging-specific variables
-│   └── terragrunt.hcl      # Staging environment
-└── prod/
-    ├── env.hcl             # Prod-specific variables
-    └── terragrunt.hcl      # Production environment
-```
-
-### Deploy with Terraform
-
-```bash
-# Initialize and apply production
-cd terraform/environments/prod
-terraform init
-terraform plan -var-file="terraform.tfvars"
-terraform apply
-
-# Or use Terragrunt for all environments
-cd terragrunt/prod
-terragrunt run-all plan
-terragrunt run-all apply
-```
-
-### Environment Differences
-
-| Setting | Dev | Staging | Prod (Current) |
-|---------|-----|---------|----------------|
-| Replicas | 1 | 2 | 1 (resource-optimized) |
-| Auto-sync | Manual | Auto | Auto |
-| Self-heal | No | Yes | Yes |
-| HPA | Disabled | 1-3 | 1-5 |
-| Git Branch | develop | develop | main |
-
-> **Note**: Production currently runs 1 replica per service to optimize server resources. Scale up via HPA when traffic increases.
-
-## How to Deploy from Scratch
-
-### Prerequisites
-
-1. K3s cluster running on Server1
-2. ArgoCD installed in `argocd` namespace
-3. External Secrets Operator installed
-4. Vault running on Server2
-
-### Step 1: Configure Vault Secrets
-
-```bash
-# SSH to Server2
-ssh server2
-
-# Run the Vault setup script
-cd eshop-platform-infra/k8s/external-secrets
-chmod +x vault-setup.sh
-./vault-setup.sh
-
-# Update placeholder values with real secrets
-docker exec portfolio-vault vault kv put secret/eshop/global \
-    RABBITMQ_HOST="rabbitmq.eshop.svc.cluster.local" \
-    RABBITMQ_USER="eshop" \
-    RABBITMQ_PASS="your-secure-password"
-```
-
-### Step 2: Deploy with Ansible
-
-```bash
-# Full deployment
-cd eshop-platform-infra/ansible
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml
-
-# Or deploy specific components
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags namespace
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags rbac
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags infrastructure
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-eshop.yml --tags apps
-```
-
-### Step 3: Verify Deployment
-
-```bash
-# SSH to Server1
-ssh server1
-
-# Check namespace
-sudo kubectl get all -n eshop
-
-# Check ArgoCD applications
-sudo kubectl get applications -n argocd
-
-# Check external secrets
-sudo kubectl get externalsecrets -n eshop
-```
-
-## Individual Service Deployment
-
-Each service auto-deploys when code is pushed to main:
-
-1. Push code to `feature/*` branch
-2. Create PR to `develop`
-3. PR validation runs (lint, security scan)
-4. Merge to `develop` for integration testing
-5. Create PR to `main`
-6. Merge to `main` triggers:
-   - Docker build and push to GHCR
-   - Helm values update
-   - ArgoCD sync
-
-### Manual ArgoCD Sync
-
-```bash
-# Sync specific application
-argocd app sync basket-api
-
-# Sync all eshop applications
-argocd app sync -l project=eshop
-```
-
-## Infrastructure Components
-
-### RabbitMQ
-- **Service**: `rabbitmq.eshop.svc.cluster.local`
-- **Ports**: 5672 (AMQP), 15672 (Management)
-- **Storage**: 5Gi PVC
-
-### Redis
-- **Service**: `redis.eshop.svc.cluster.local`
-- **Port**: 6379
-- **Storage**: 2Gi PVC
-
-### PostgreSQL
-- **Service**: `postgresql.eshop.svc.cluster.local`
-- **Port**: 5432
-- **Storage**: 10Gi PVC
-- **Databases**: catalog, identity, ordering
-
-### Seq
-- **Service**: `seq.eshop.svc.cluster.local`
-- **Port**: 5341
-- **Storage**: 5Gi PVC
-
-## Network Architecture
-
-### Network Policies
+## Network Policies
 
 | Policy | Description |
 |--------|-------------|
 | `default-deny-all` | Deny all ingress/egress by default |
 | `allow-dns` | Allow DNS resolution (kube-system) |
-| `allow-api-gateway-to-backends` | API Gateway → Backend services |
+| `allow-frontend-to-backends` | Frontend → Backend gRPC services |
+| `allow-backend-inter-service` | Backend service communication |
+| `allow-checkoutservice-egress` | Checkout → All required services |
+| `allow-cartservice-to-redis` | Cart service → Redis Cart |
 | `allow-prometheus-scraping` | Monitoring namespace → eShop pods |
-| `allow-egress-to-vault` | All pods → Vault (100.103.13.92:8200) |
-| `allow-egress-to-postgresql` | Database clients → PostgreSQL |
-| `allow-egress-to-redis` | Cache clients → Redis |
-| `allow-egress-to-rabbitmq` | Event bus clients → RabbitMQ |
-
-### Ingress URLs
-
-| Service | URL |
-|---------|-----|
-| API Gateway | https://api-gateway.jagdevops.co.za |
-| Web SPA | https://web-spa.jagdevops.co.za |
-| Identity API | https://identity-api.jagdevops.co.za |
-
-## Maintenance Operations
-
-```bash
-# Scale down all services
-ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=scale_down
-
-# Scale up all services
-ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=scale_up
-
-# Drain specific service
-ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=drain -e service=basket-api
-
-# Restart a service
-ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=restart -e service=catalog-api
-
-# View status
-ansible-playbook -i inventory/hosts.yml playbooks/eshop-maintenance.yml -e action=status
-```
 
 ## Directory Structure
 
@@ -448,16 +237,18 @@ eshop-platform-infra/
 │   ├── production-deploy.yml   # Production deployment
 │   └── pr-validation.yml       # PR validation
 ├── helm-charts/
-│   ├── basket-api/
-│   ├── catalog-api/
-│   ├── ordering-api/
-│   ├── identity-api/
-│   ├── payment-api/
-│   ├── webhook-api/
-│   ├── web-spa/
-│   ├── mobile-bff/
-│   ├── ordering-signalr/
-│   └── api-gateway/
+│   ├── frontend/
+│   ├── cartservice/
+│   ├── productcatalogservice/
+│   ├── currencyservice/
+│   ├── paymentservice/
+│   ├── shippingservice/
+│   ├── emailservice/
+│   ├── checkoutservice/
+│   ├── recommendationservice/
+│   ├── adservice/
+│   ├── redis-cart/
+│   └── loadgenerator/
 ├── argocd/
 │   ├── applications/           # ArgoCD Application manifests
 │   └── projects/               # ArgoCD AppProject
@@ -482,17 +273,39 @@ eshop-platform-infra/
     └── playbooks/
 ```
 
+## Verification Commands
+
+```bash
+# Lint all Helm charts
+for chart in frontend cartservice productcatalogservice currencyservice paymentservice shippingservice emailservice checkoutservice recommendationservice adservice redis-cart loadgenerator; do
+  helm lint helm-charts/$chart
+done
+
+# Check pod status
+kubectl get pods -n eshop -w
+
+# Check ArgoCD applications
+kubectl get applications -n argocd
+
+# Check load generator logs
+kubectl logs -n eshop -l app=loadgenerator -f
+
+# Access frontend
+kubectl port-forward svc/frontend -n eshop 8080:80
+# Open http://localhost:8080
+```
+
 ## Troubleshooting
 
 ### Common Issues & Fixes
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| `CreateContainerConfigError` | Missing secrets | Create placeholder secrets: `kubectl create secret generic <name>-secrets --from-literal=placeholder=true -n eshop` |
-| `CrashLoopBackOff` (nginx) | Read-only filesystem | Ensure `/var/cache/nginx` and `/var/run` volumes are mounted as emptyDir |
-| ArgoCD `ComparisonError` | YAML parse error | Check values.yaml for malformed YAML (missing `httpGet:` in probes) |
-| ArgoCD `Unknown` sync | Tracking wrong branch | Verify ArgoCD app targets `main` branch |
-| Pod stuck in `Pending` | Resource constraints | Check node resources: `kubectl top nodes` |
+| `CrashLoopBackOff` | gRPC health check fails | Verify K8s 1.24+ for gRPC probes |
+| `ImagePullBackOff` | GCR rate limiting | Use authenticated pulls or cache images |
+| Service unreachable | Network policy blocking | Check network policies match service ports |
+| Frontend blank | Backend services down | Check all gRPC services are running |
+| Load generator errors | Frontend not ready | Wait for frontend pod to be ready |
 
 ### Useful Commands
 
@@ -500,8 +313,8 @@ eshop-platform-infra/
 # Check pod events
 kubectl describe pod <pod-name> -n eshop
 
-# Check ArgoCD app status
-kubectl get application <app-name> -n argocd -o yaml | grep -A 30 'status:'
+# Check gRPC connectivity
+kubectl exec -it deployment/frontend -n eshop -- grpcurl -plaintext productcatalogservice:3550 list
 
 # Force ArgoCD sync
 kubectl patch application <app-name> -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
@@ -512,11 +325,11 @@ kubectl top pods -n eshop
 
 ## Platform Notes
 
-- This platform is **application-agnostic** - it can be adapted for other microservices
-- Currently using **nginx stub containers** for demonstration - replace with actual service images
-- All secrets use `[placeholder]` markers - replace with real values before production
+- Uses **Google Online Boutique** - a production-grade microservices demo
+- Services communicate via **gRPC** with proper health probes
+- **Load generator** provides automatic traffic for realistic metrics
+- Infrastructure pods (PostgreSQL, RabbitMQ, Redis) kept for portfolio showcase
 - HPA configurations include ignoreDifferences to prevent ArgoCD sync loops
-- Server1 also hosts `labdnascientific` namespace (multi-tenant cluster)
 
 ## Contributing
 

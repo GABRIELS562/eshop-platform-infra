@@ -1,0 +1,21 @@
+apiVersion: v2
+name: adservice
+description: Online Boutique Ad Service - Advertisement display based on context
+type: application
+version: 1.0.0
+appVersion: "0.10.5"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - online-boutique
+  - ads
+  - advertising
+  - grpc
+  - microservice
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/GoogleCloudPlatform/microservices-demo
+dependencies: []
+annotations:
+  category: Backend Service

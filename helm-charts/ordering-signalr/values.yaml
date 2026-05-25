@@ -2,53 +2,44 @@
 # This is a YAML-formatted file.
 
 replicaCount: 1
-
 image:
   repository: ghcr.io/gabriels562/ordering-signalr
   tag: "639b5bb"
   pullPolicy: IfNotPresent
-
 imagePullSecrets:
   - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: ""
-
 serviceAccount:
   create: true
   name: ordering-signalr-sa
   annotations: {}
-
 podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: "80"
   prometheus.io/path: "/metrics"
-
 podLabels:
   app: ordering-signalr
   tier: backend
   env: production
   team: platform
   needs-rabbitmq: "true"
-
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
   fsGroup: 1000
-
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
+  readOnlyRootFilesystem: false
   capabilities:
     drop:
       - ALL
-
 service:
   type: ClusterIP
   port: 80
   targetPort: 80
-
 ingress:
-  enabled: true
+  enabled: false
   className: traefik
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
@@ -61,7 +52,6 @@ ingress:
     - secretName: ordering-signalr-tls
       hosts:
         - ordering-signalr.jagdevops.co.za
-
 resources:
   requests:
     memory: "128Mi"
@@ -69,14 +59,11 @@ resources:
   limits:
     memory: "256Mi"
     cpu: "200m"
-
 autoscaling:
-  enabled: true
   minReplicas: 1
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
-
 livenessProbe:
   httpGet:
     path: /health/live
@@ -85,28 +72,16 @@ livenessProbe:
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
-
 readinessProbe:
-  httpGet:
     path: /health/ready
-    port: 80
   initialDelaySeconds: 15
   periodSeconds: 5
   timeoutSeconds: 3
-  failureThreshold: 3
-
 startupProbe:
-  httpGet:
-    path: /health/live
-    port: 80
   initialDelaySeconds: 10
-  periodSeconds: 5
   failureThreshold: 30
-
 nodeSelector: {}
-
 tolerations: []
-
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
@@ -119,27 +94,16 @@ affinity:
                 values:
                   - ordering-signalr
           topologyKey: kubernetes.io/hostname
-
 vault:
-  enabled: true
   secretPath: secret/eshop/ordering-signalr
-
 podDisruptionBudget:
-  enabled: true
   minAvailable: 1
-
 env:
   - name: ASPNETCORE_ENVIRONMENT
     value: "Production"
   - name: ASPNETCORE_URLS
     value: "http://+:80"
-
-envFrom:
-  - secretRef:
-      name: ordering-signalr-secrets
-
 configMap:
-  enabled: true
   data:
     Identity__Url: "http://identity-api.eshop.svc.cluster.local"
     EventBus__Connection: "rabbitmq.eshop.svc.cluster.local"

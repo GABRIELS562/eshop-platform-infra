@@ -2,53 +2,44 @@
 # This is a YAML-formatted file.
 
 replicaCount: 1
-
 image:
   repository: ghcr.io/gabriels562/identity-api
   tag: "d216926"
   pullPolicy: IfNotPresent
-
 imagePullSecrets:
   - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: ""
-
 serviceAccount:
   create: true
   name: identity-api-sa
   annotations: {}
-
 podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: "80"
   prometheus.io/path: "/metrics"
-
 podLabels:
   app: identity-api
   tier: backend
   env: production
   team: platform
   needs-database: "true"
-
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
   fsGroup: 1000
-
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
+  readOnlyRootFilesystem: false
   capabilities:
     drop:
       - ALL
-
 service:
   type: ClusterIP
   port: 80
   targetPort: 80
-
 ingress:
-  enabled: true
+  enabled: false
   className: traefik
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
@@ -61,7 +52,6 @@ ingress:
     - secretName: identity-api-tls
       hosts:
         - identity-api.jagdevops.co.za
-
 resources:
   requests:
     memory: "128Mi"
@@ -69,14 +59,11 @@ resources:
   limits:
     memory: "256Mi"
     cpu: "200m"
-
 autoscaling:
-  enabled: true
   minReplicas: 1
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
-
 livenessProbe:
   httpGet:
     path: /health/live
@@ -85,28 +72,16 @@ livenessProbe:
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
-
 readinessProbe:
-  httpGet:
     path: /health/ready
-    port: 80
   initialDelaySeconds: 15
   periodSeconds: 5
   timeoutSeconds: 3
-  failureThreshold: 3
-
 startupProbe:
-  httpGet:
-    path: /health/live
-    port: 80
   initialDelaySeconds: 10
-  periodSeconds: 5
   failureThreshold: 30
-
 nodeSelector: {}
-
 tolerations: []
-
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
@@ -119,27 +94,16 @@ affinity:
                 values:
                   - identity-api
           topologyKey: kubernetes.io/hostname
-
 vault:
-  enabled: true
   secretPath: secret/eshop/identity-api
-
 podDisruptionBudget:
-  enabled: true
   minAvailable: 1
-
 env:
   - name: ASPNETCORE_ENVIRONMENT
     value: "Production"
   - name: ASPNETCORE_URLS
     value: "http://+:80"
-
-envFrom:
-  - secretRef:
-      name: identity-api-secrets
-
 configMap:
-  enabled: true
   data:
     Database__Connection: "sqlserver.eshop.svc.cluster.local"
     Issuer__Url: "https://identity-api.jagdevops.co.za"

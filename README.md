@@ -2,6 +2,18 @@
 
 Production-grade DevOps platform for Microsoft's eShopOnContainers microservices application, deployed on K3s.
 
+[![Build Status](https://github.com/GABRIELS562/eshop-platform-infra/actions/workflows/develop-ci.yml/badge.svg)](https://github.com/GABRIELS562/eshop-platform-infra/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Quick Links
+
+| Resource | Description |
+|----------|-------------|
+| [Terraform Modules](#terraform--terragrunt) | Infrastructure as Code |
+| [Helm Charts](#directory-structure) | Kubernetes deployments |
+| [ArgoCD Apps](#gitops-flow) | GitOps configuration |
+| [Ansible Playbooks](#maintenance-operations) | Operational tasks |
+
 ## Architecture
 
 ```mermaid
@@ -191,6 +203,60 @@ graph LR
 - Slow requests (>1s)
 - Authentication failures
 - Database connection errors
+
+## Terraform & Terragrunt
+
+Infrastructure as Code using Terraform modules and Terragrunt for multi-environment management.
+
+### Terraform Modules
+
+| Module | Description |
+|--------|-------------|
+| `k3s-namespace` | Creates namespace with resource quotas and limit ranges |
+| `argocd-application` | Deploys ArgoCD Application resources |
+| `vault-secrets` | Manages Vault KV secrets and policies |
+| `network-policies` | Creates Kubernetes NetworkPolicies |
+
+### Environment Management with Terragrunt
+
+```
+terragrunt/
+├── terragrunt.hcl          # Root configuration
+├── dev/
+│   ├── env.hcl             # Dev-specific variables
+│   └── terragrunt.hcl      # Dev environment
+├── staging/
+│   ├── env.hcl             # Staging-specific variables
+│   └── terragrunt.hcl      # Staging environment
+└── prod/
+    ├── env.hcl             # Prod-specific variables
+    └── terragrunt.hcl      # Production environment
+```
+
+### Deploy with Terraform
+
+```bash
+# Initialize and apply production
+cd terraform/environments/prod
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply
+
+# Or use Terragrunt for all environments
+cd terragrunt/prod
+terragrunt run-all plan
+terragrunt run-all apply
+```
+
+### Environment Differences
+
+| Setting | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| Replicas | 1 | 2 | 2 |
+| Auto-sync | Manual | Auto | Auto |
+| Self-heal | No | Yes | Yes |
+| HPA | Disabled | 1-3 | 2-5 |
+| Git Branch | develop | develop | main |
 
 ## How to Deploy from Scratch
 

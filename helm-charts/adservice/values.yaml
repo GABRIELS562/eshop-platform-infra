@@ -3,7 +3,7 @@
 
 replicaCount: 1
 image:
-  repository: gcr.io/google-samples/microservices-demo/adservice
+  repository: us-central1-docker.pkg.dev/google-samples/microservices-demo/adservice
   tag: "v0.10.5"
   pullPolicy: IfNotPresent
 imagePullSecrets: []

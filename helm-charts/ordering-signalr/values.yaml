@@ -30,9 +30,6 @@ podSecurityContext:
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
-  capabilities:
-    drop:
-      - ALL
 service:
   type: ClusterIP
   port: 80

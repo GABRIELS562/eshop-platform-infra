@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+spec:
+  type: NodePort
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: {{ .Values.service.metricsPort }}
+      nodePort: {{ .Values.service.metricsNodePort }}
+      protocol: TCP
+  selector:
+    {{- include "otel-collector.selectorLabels" . | nindent 4 }}

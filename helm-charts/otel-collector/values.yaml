@@ -37,6 +37,8 @@ service:
   otlpGrpcPort: 4317
   otlpHttpPort: 4318
   metricsPort: 8889
+  # NodePort for external Prometheus scraping
+  metricsNodePort: 30889
 resources:
   requests:
     memory: "128Mi"

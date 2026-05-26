@@ -33,6 +33,10 @@ spec:
       ports:
         - protocol: TCP
           port: 8889
+    # Allow external Prometheus scraping via NodePort
+    - ports:
+        - protocol: TCP
+          port: 8889
 ---
 # Allow egress from services to OTel Collector
 apiVersion: networking.k8s.io/v1

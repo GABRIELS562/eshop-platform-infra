@@ -88,6 +88,8 @@ env:
   - name: DISABLE_PROFILER
     value: "1"
   # OpenTelemetry Configuration
+  - name: ENABLE_TRACING
+    value: "1"
   - name: COLLECTOR_SERVICE_ADDR
     value: "otel-collector.eshop.svc.cluster.local:4317"
   - name: OTEL_SERVICE_NAME

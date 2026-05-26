@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: {{ .Values.config.receivers.otlp.protocols.grpc.endpoint }}
+          http:
+            endpoint: {{ .Values.config.receivers.otlp.protocols.http.endpoint }}
+
+    connectors:
+      spanmetrics:
+        histogram:
+          explicit:
+            buckets: {{ toJson .Values.config.connectors.spanmetrics.histogram.explicit.buckets }}
+        dimensions:
+          {{- range .Values.config.connectors.spanmetrics.dimensions }}
+          - name: {{ .name }}
+          {{- end }}
+        exemplars:
+          enabled: {{ .Values.config.connectors.spanmetrics.exemplars.enabled }}
+
+    exporters:
+      prometheus:
+        endpoint: {{ .Values.config.exporters.prometheus.endpoint }}
+        namespace: {{ .Values.config.exporters.prometheus.namespace }}
+        const_labels:
+          cluster: {{ .Values.config.exporters.prometheus.const_labels.cluster }}
+      debug:
+        verbosity: {{ .Values.config.exporters.debug.verbosity }}
+
+    extensions:
+      health_check:
+        endpoint: {{ .Values.config.extensions.health_check.endpoint }}
+
+    service:
+      extensions:
+        {{- range .Values.config.service.extensions }}
+        - {{ . }}
+        {{- end }}
+      pipelines:
+        traces:
+          receivers:
+            {{- range .Values.config.service.pipelines.traces.receivers }}
+            - {{ . }}
+            {{- end }}
+          exporters:
+            {{- range .Values.config.service.pipelines.traces.exporters }}
+            - {{ . }}
+            {{- end }}
+        metrics:
+          receivers:
+            {{- range .Values.config.service.pipelines.metrics.receivers }}
+            - {{ . }}
+            {{- end }}
+          exporters:
+            {{- range .Values.config.service.pipelines.metrics.exporters }}
+            - {{ . }}
+            {{- end }}

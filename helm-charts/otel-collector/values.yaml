@@ -1,0 +1,123 @@
+# Default values for otel-collector
+# This is a YAML-formatted file.
+
+replicaCount: 1
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.96.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: true
+  name: otel-collector-sa
+  annotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8889"
+  prometheus.io/path: "/metrics"
+podLabels:
+  app: otel-collector
+  tier: observability
+  env: production
+  team: platform
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+service:
+  type: ClusterIP
+  otlpGrpcPort: 4317
+  otlpHttpPort: 4318
+  metricsPort: 8889
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "200m"
+livenessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /
+    port: 13133
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# OTel Collector configuration
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+  connectors:
+    spanmetrics:
+      histogram:
+        explicit:
+          buckets:
+            - 5ms
+            - 10ms
+            - 25ms
+            - 50ms
+            - 100ms
+            - 250ms
+            - 500ms
+            - 1s
+            - 2.5s
+            - 5s
+            - 10s
+      dimensions:
+        - name: http.method
+        - name: http.status_code
+        - name: rpc.method
+        - name: rpc.grpc.status_code
+      exemplars:
+        enabled: true
+  exporters:
+    prometheus:
+      endpoint: "0.0.0.0:8889"
+      namespace: eshop
+      const_labels:
+        cluster: k3s-prod
+    debug:
+      verbosity: basic
+  extensions:
+    health_check:
+      endpoint: "0.0.0.0:13133"
+  service:
+    extensions:
+      - health_check
+    pipelines:
+      traces:
+        receivers:
+          - otlp
+        exporters:
+          - spanmetrics
+          - debug
+      metrics:
+        receivers:
+          - spanmetrics
+        exporters:
+          - prometheus

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: otel-collector
+description: OpenTelemetry Collector for receiving traces and converting to Prometheus metrics
+type: application
+version: 1.0.0
+appVersion: "0.96.0"
+maintainers:
+  - name: DevOps Team
+    email: devops@jagdevops.co.za
+keywords:
+  - opentelemetry
+  - otel
+  - collector
+  - observability
+  - tracing
+  - metrics
+home: https://github.com/GABRIELS562/eshop-platform-infra
+sources:
+  - https://github.com/open-telemetry/opentelemetry-collector-contrib
+dependencies: []
+annotations:
+  category: Observability

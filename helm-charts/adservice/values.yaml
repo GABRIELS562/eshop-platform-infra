@@ -85,3 +85,8 @@ podDisruptionBudget:
 env:
   - name: PORT
     value: "9555"
+  # OpenTelemetry Configuration
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector.eshop.svc.cluster.local:4317"
+  - name: OTEL_SERVICE_NAME
+    value: "adservice"

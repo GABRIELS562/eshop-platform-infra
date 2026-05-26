@@ -129,3 +129,8 @@ env:
     value: "shoppingassistantservice:80"
   - name: ENABLE_PROFILER
     value: "0"
+  # OpenTelemetry Configuration
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector.eshop.svc.cluster.local:4317"
+  - name: OTEL_SERVICE_NAME
+    value: "frontend"

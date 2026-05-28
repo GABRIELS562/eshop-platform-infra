@@ -3,7 +3,10 @@
 Production-grade DevOps platform running Google's Online Boutique microservices demo, deployed on K3s with GitOps.
 
 [![Build Status](https://github.com/GABRIELS562/eshop-platform-infra/actions/workflows/develop-ci.yml/badge.svg)](https://github.com/GABRIELS562/eshop-platform-infra/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-K3s-326CE5?logo=kubernetes&logoColor=white)](https://k3s.io/)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-EF7B4D?logo=argo&logoColor=white)](https://argoproj.github.io/cd/)
+
+**Live:** [eshop.jagdevops.co.za](https://eshop.jagdevops.co.za)
 
 ## Current Status
 
@@ -39,16 +42,6 @@ ssh server1 "sudo kubectl logs -f deployment/frontend -n eshop"
 ssh server1 "sudo kubectl port-forward svc/frontend -n eshop 8080:80"
 ```
 
-## Quick Links
-
-| Resource | Description |
-|----------|-------------|
-| [STARTHERE.md](STARTHERE.md) | Comprehensive project documentation |
-| [Terraform Modules](#terraform--terragrunt) | Infrastructure as Code |
-| [Helm Charts](#directory-structure) | Kubernetes deployments |
-| [ArgoCD Apps](#gitops-flow) | GitOps configuration |
-| [Ansible Playbooks](#maintenance-operations) | Operational tasks |
-
 ## Architecture
 
 ```mermaid
@@ -58,7 +51,7 @@ graph TB
         GitHub[GitHub Actions]
     end
 
-    subgraph "Server1 - K3s Cluster (100.89.26.128)"
+    subgraph "Server1 - K3s Cluster"
         subgraph "eshop namespace"
             FE[Frontend :8080]
 
@@ -94,7 +87,7 @@ graph TB
         end
     end
 
-    subgraph "Server2 - Monitoring (100.103.13.92)"
+    subgraph "Server2 - Monitoring"
         VLT[Vault]
         PROM[Prometheus]
         GRAF[Grafana]
@@ -120,8 +113,8 @@ graph TB
 
 | Component | Description |
 |-----------|-------------|
-| **K3s Cluster** | Server1 (100.89.26.128) - Lightweight Kubernetes |
-| **Monitoring Stack** | Server2 (100.103.13.92) - Prometheus, Grafana, Loki, Vault |
+| **K3s Cluster** | Server1 - Lightweight Kubernetes |
+| **Monitoring Stack** | Server2 - Prometheus, Grafana, Loki, Vault |
 | **GitOps** | ArgoCD for continuous deployment |
 | **Secrets** | HashiCorp Vault with External Secrets Operator |
 | **CI/CD** | GitHub Actions with reusable workflows |
@@ -331,14 +324,20 @@ kubectl top pods -n eshop
 - Infrastructure pods (PostgreSQL, RabbitMQ, Redis) kept for portfolio showcase
 - HPA configurations include ignoreDifferences to prevent ArgoCD sync loops
 
-## Contributing
+## Related Projects
 
-1. Create feature branch from `develop`
-2. Make changes
-3. Run `helm lint` on modified charts
-4. Create PR to `develop`
-5. After testing, create PR to `main`
+| Project | Description | Link |
+|---------|-------------|------|
+| **LIMS** | DNA lab management system | [JAG-LABSCIENTIFIC-DNA](https://github.com/GABRIELS562/JAG-LABSCIENTIFIC-DNA) |
+| **Forensic Collector** | Tamper-evident audit trails | [forensic-evidence-collector](https://github.com/GABRIELS562/forensic-evidence-collector) |
+| **Architecture** | Infrastructure overview | [Architecture-](https://github.com/GABRIELS562/Architecture-) |
 
-## License
+---
 
-MIT License - See LICENSE file for details.
+## Author
+
+**Jaime Gabriels** — DevOps Engineer
+
+[![Portfolio](https://img.shields.io/badge/Portfolio-jagdevops.co.za-000000?style=for-the-badge)](https://jagdevops.co.za)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/jaime-gabriels-643132386)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github)](https://github.com/GABRIELS562)
